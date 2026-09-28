@@ -267,7 +267,7 @@ details[open] summary::after{content:"–"}
           <div class="row"><label class="btn small" for="tplInput" style="flex:0 0 auto;flex-direction:row;color:var(--ink);font-size:13px">Importer le billet modèle</label><button class="btn small danger" id="tplDel" type="button" style="flex:0 0 auto" hidden>Retirer le modèle</button></div>
           <input id="tplInput" class="sr" type="file" accept="image/*">
           <div id="tplWrap" hidden style="position:relative;touch-action:none;user-select:none;-webkit-user-select:none;cursor:crosshair"><img id="tplImg" alt="Billet modèle" draggable="false" style="display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line)"><div id="tplRect" style="position:absolute;border:3px solid var(--accent);background:rgba(59,53,219,.18);display:none;pointer-events:none"></div></div>
-          <div class="row" id="tplSizeRow" hidden><label for="tplWidth">Largeur du billet imprimé (cm)<input id="tplWidth" type="number" min="3" max="19" step="0.5" value="15"></label><div style="display:flex;align-items:flex-end"><button class="btn primary" id="tplSave" type="button" style="width:100%">Enregistrer l'emplacement</button></div></div>
+          <div class="row" id="tplSizeRow" hidden><input id="tplWidth" type="hidden" value="15"><span class="muted" style="flex:1 1 200px;align-self:center">Impression : 8 billets par page A4 (4 à gauche, 4 à droite). Le QR remplit le carré bleu.</span><button class="btn primary" id="tplSave" type="button" style="flex:0 1 auto">Enregistrer l'emplacement</button></div>
           <p class="muted" id="tplMsg" style="margin:0"></p>
         </div>
       </details>
@@ -567,7 +567,7 @@ function showCreated(made){
     $("#dlLast").onclick=()=>downloadTicket(t);
   } else {
     box.innerHTML = `<div class="panel"><div class="t-name">${made.length} QR codes créés</div>
-      <span class="muted">N° ${pad(made[0].num)} à ${pad(made[made.length-1].num)} · ${usePaper()?"Billets papier":(useImg()?"1 billet":"12 QR")} par page A4, à imprimer puis découper.</span>
+      <span class="muted">N° ${pad(made[0].num)} à ${pad(made[made.length-1].num)} · ${usePaper()?"8 billets":(useImg()?"1 billet":"12 QR")} par page A4, à imprimer puis découper.</span>
       <div><button class="btn primary small" id="pdfLast" type="button">Télécharger la planche PDF</button></div></div>`;
   }
   $("#pdfLast").onclick=()=>downloadPdf(made);
@@ -681,7 +681,7 @@ function detectZone(img){
       st.push([start,hh]); }
   }
   if(!best.s || best.s < Math.min(w,h)*0.12) return null;
-  const ins=0.05; return {x:(best.x+best.w*ins)/w, y:(best.y+best.h*ins)/h, w:best.w*(1-2*ins)/w, h:best.h*(1-2*ins)/h};
+  const ins=0.03; return {x:(best.x+best.w*ins)/w, y:(best.y+best.h*ins)/h, w:best.w*(1-2*ins)/w, h:best.h*(1-2*ins)/h};
 }
 async function autoZone(){
   if(!tplEl || tplZone) return;
@@ -698,33 +698,32 @@ function formatOk(){
 function ticketCanvasPaper(t){
   const W=tplEl.naturalWidth||tplEl.width, H=tplEl.naturalHeight||tplEl.height, c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
   g.drawImage(tplEl,0,0,W,H); const z=tplZone, zw=z.w*W, zh=z.h*H, s=Math.min(zw,zh);
-  g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12), z.x*W+(zw-s)/2, z.y*H+(zh-s)/2, s, s);
+  g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12,1), z.x*W+(zw-s)/2, z.y*H+(zh-s)/2, s, s);
   return c;
 }
 function downloadPdfPaper(list, ev){
   const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"});
-  const r=(tplEl.naturalHeight||tplEl.height)/(tplEl.naturalWidth||tplEl.width);
-  let tw=Math.min(200,tplWidth*10), th=tw*r; if(th>287){ th=287; tw=th/r; }
-  const cols=Math.max(1,Math.floor(200/tw)), rows=Math.max(1,Math.floor(287/th)), per=cols*rows;
-  const ox=(210-cols*tw)/2, oy=(297-rows*th)/2, z=tplZone;
+  const r=(tplEl.naturalHeight||tplEl.height)/(tplEl.naturalWidth||tplEl.width), gap=4, cols=2, rows=4, per=8;
+  let tw=(200-gap)/cols, th=tw*r; const maxTh=(287-gap*(rows-1))/rows; if(th>maxTh){ th=maxTh; tw=th/r; }
+  const ox=(210-(cols*tw+gap))/2, oy=(297-(rows*th+gap*(rows-1)))/2, z=tplZone;
   [...list].sort((a,b)=>a.num-b.num).forEach((t,i)=>{
     const k=i%per; if(i>0&&k===0) doc.addPage();
-    const x=ox+(k%cols)*tw, y=oy+Math.floor(k/cols)*th;
+    const col=Math.floor(k/rows), row=k%rows, x=ox+col*(tw+gap), y=oy+row*(th+gap);
     doc.addImage(tplData,"JPEG",x,y,tw,th,"tpl","FAST");
     const zw=z.w*tw, zh=z.h*th, s=Math.min(zw,zh);
-    doc.addImage(qrCanvas(t.code,10).toDataURL("image/png"),"PNG",x+z.x*tw+(zw-s)/2,y+z.y*th+(zh-s)/2,s,s);
+    doc.addImage(qrCanvas(t.code,10,1).toDataURL("image/png"),"PNG",x+z.x*tw+(zw-s)/2,y+z.y*th+(zh-s)/2,s,s);
     doc.setLineDashPattern([1,1.5],0); doc.setDrawColor(170); doc.rect(x,y,tw,th);
   });
   doc.save("billets-papier-"+slug(ev?ev.name:"evenement")+".pdf");
 }
 
 /* ---------- QR drawing / export ---------- */
-function qrCanvas(code, cell){
+function qrCanvas(code, cell, m=4){
   const qr = qrcode(0,"M"); qr.addData(code); qr.make();
-  const n = qr.getModuleCount(), q=cell*(n+8);
+  const n = qr.getModuleCount(), q=cell*(n+2*m);
   const c=document.createElement("canvas"); c.width=c.height=q; const g=c.getContext("2d");
   g.fillStyle="#fff"; g.fillRect(0,0,q,q); g.fillStyle="#000";
-  for(let r=0;r<n;r++) for(let col=0;col<n;col++) if(qr.isDark(r,col)) g.fillRect((col+4)*cell,(r+4)*cell,cell,cell);
+  for(let r=0;r<n;r++) for(let col=0;col<n;col++) if(qr.isDark(r,col)) g.fillRect((col+m)*cell,(r+m)*cell,cell,cell);
   return c;
 }
 function fitText(g, text, x, y, maxW, size, weight, fam, align){
