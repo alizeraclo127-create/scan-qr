@@ -259,6 +259,7 @@ details[open] summary::after{content:"–"}
             </div>
           </div>
           <label class="check" for="withImg"><input type="checkbox" id="withImg" checked> Mettre le visuel sur les billets téléchargés (PNG et PDF)</label>
+          <label class="check" for="pdfPer">Billets par page A4 (PDF) <select id="pdfPer" style="width:auto;padding:8px 10px"><option value="1">1 — pleine page</option><option value="2">2 par page</option><option value="4">4 par page</option></select></label>
         </div>
       </details>
       <div class="seg" role="group" aria-label="Type">
@@ -307,7 +308,7 @@ details[open] summary::after{content:"–"}
       <button class="btn small" id="pdfBtn" type="button">Planche PDF à imprimer</button>
       <button class="btn small" id="exportBtn" type="button">Exporter en CSV</button>
       <button class="btn small" id="refreshBtn" type="button">Actualiser</button>
-      <label class="check" for="withImg2" id="withImg2Wrap" style="flex:0 0 auto" hidden><input type="checkbox" id="withImg2" checked> Avec visuel</label>
+      <span id="withImg2Wrap" style="flex:0 0 auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap" hidden><label class="check" for="withImg2"><input type="checkbox" id="withImg2" checked> Avec visuel</label><select id="pdfPer2" aria-label="Billets par page" style="width:auto;padding:8px 10px"><option value="1">1 par page</option><option value="2">2 par page</option><option value="4">4 par page</option></select></span>
     </div>
     <div class="card list" id="list"></div>
     <div class="card panel">
@@ -556,7 +557,7 @@ function showCreated(made){
     $("#dlLast").onclick=()=>downloadTicket(t);
   } else {
     box.innerHTML = `<div class="panel"><div class="t-name">${made.length} QR codes créés</div>
-      <span class="muted">N° ${pad(made[0].num)} à ${pad(made[made.length-1].num)} · ${useImg()?"4 billets":"12 QR"} par page A4, à imprimer puis découper.</span>
+      <span class="muted">N° ${pad(made[0].num)} à ${pad(made[made.length-1].num)} · ${useImg()?(perPage()>1?perPage()+" billets":"1 billet"):"12 QR"} par page A4, à imprimer puis découper.</span>
       <div><button class="btn primary small" id="pdfLast" type="button">Télécharger la planche PDF</button></div></div>`;
   }
   $("#pdfLast").onclick=()=>downloadPdf(made);
@@ -690,24 +691,31 @@ function downloadPdf(list){
   });
   doc.save("qr-"+slug(ev?ev.name:"evenement")+".pdf");
 }
+function perPage(){ return parseInt($("#pdfPer").value,10)||1; }
 function downloadPdfImg(list, ev){
   const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"});
-  const cols=2, mx=4, my=4, cw=(210-2*mx)/2, ch=(297-2*my)/2, r=evImgEl.height/evImgEl.width;
+  const n=perPage(), cols=n===4?2:1, rows=n===1?1:2, mx=n===1?10:4, my=n===1?10:4;
+  const cw=(210-2*mx)/cols, ch=(297-2*my)/rows, r=evImgEl.height/evImgEl.width, s=Math.min(cw/101, ch/144);
   [...list].sort((a,b)=>a.num-b.num).forEach((t,i)=>{
-    const k=i%4; if(i>0&&k===0) doc.addPage();
+    const k=i%n; if(i>0&&k===0) doc.addPage();
     const x=mx+(k%cols)*cw, y=my+Math.floor(k/cols)*ch;
-    doc.setLineDashPattern([1,1.5],0); doc.setDrawColor(190); doc.rect(x,y,cw,ch);
-    const qs=48, bottom=qs+26; let iw=cw-8, ih=iw*r; const maxH=ch-bottom-8; if(ih>maxH){ ih=maxH; iw=ih/r; }
-    doc.addImage(evImg,"JPEG",x+(cw-iw)/2,y+4,iw,ih);
-    const qy=y+ch-bottom; doc.addImage(qrCanvas(t.code,8).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
-    doc.setTextColor(21,23,28); doc.setFont("helvetica","bold"); doc.setFontSize(11);
-    doc.text(doc.splitTextToSize(label(t),cw-10)[0], x+cw/2, qy+qs+6, {align:"center"});
-    doc.setFont("courier","bold"); doc.setFontSize(11); doc.setTextColor(59,53,219); doc.text(t.code, x+cw/2, qy+qs+12, {align:"center"});
-    doc.setFont("helvetica","normal"); doc.setFontSize(7); doc.setTextColor(91,97,108);
-    doc.text((t.cat||"Standard").toUpperCase()+" - une seule entrée", x+cw/2, qy+qs+17, {align:"center"});
+    if(n>1){ doc.setLineDashPattern([1,1.5],0); doc.setDrawColor(190); doc.rect(x,y,cw,ch); }
+    const qs=Math.min(cw*0.55, ch*0.42), textH=22*s, block=qs+textH;
+    let iw=cw-8*s, ih=iw*r; const maxH=ch-block-14*s; if(ih>maxH){ ih=maxH; iw=ih/r; }
+    doc.addImage(evImg,"JPEG",x+(cw-iw)/2,y+4*s,iw,ih);
+    const top=y+4*s+ih, qy=top+Math.max(4*s,(y+ch-top-block)/2);
+    doc.addImage(qrCanvas(t.code,10).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
+    doc.setTextColor(21,23,28); doc.setFont("helvetica","bold"); doc.setFontSize(12*s);
+    doc.text(doc.splitTextToSize(label(t),cw-10)[0], x+cw/2, qy+qs+7*s, {align:"center"});
+    doc.setFont("courier","bold"); doc.setFontSize(12*s); doc.setTextColor(59,53,219); doc.text(t.code, x+cw/2, qy+qs+13.5*s, {align:"center"});
+    doc.setFont("helvetica","normal"); doc.setFontSize(7.5*s); doc.setTextColor(91,97,108);
+    doc.text((t.cat||"Standard").toUpperCase()+" - une seule entrée", x+cw/2, qy+qs+19*s, {align:"center"});
   });
   doc.save("billets-"+slug(ev?ev.name:"evenement")+".pdf");
 }
+$("#pdfPer").addEventListener("change",()=>{ $("#pdfPer2").value=$("#pdfPer").value; ls.set("sq-per",$("#pdfPer").value); });
+$("#pdfPer2").addEventListener("change",()=>{ $("#pdfPer").value=$("#pdfPer2").value; ls.set("sq-per",$("#pdfPer2").value); });
+{ const v=ls.get("sq-per"); if(v){ $("#pdfPer").value=v; $("#pdfPer2").value=v; } }
 $("#pdfBtn").addEventListener("click",()=>downloadPdf(tickets));
 $("#exportBtn").addEventListener("click",()=>{
   const ev=current(); if(!ev) return;
