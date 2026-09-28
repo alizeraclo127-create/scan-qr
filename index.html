@@ -181,6 +181,16 @@ details[open] summary::after{content:"–"}
     </nav>
   </header>
 
+  <section class="panel" id="p-lock" hidden>
+    <form class="card panel" id="lockForm" autocomplete="off" style="margin-top:14px">
+      <div class="evhead"><span class="eyebrow">Événement protégé</span><span class="evname" id="lockEvName">—</span></div>
+      <p class="sub">Entrez le code de cet événement pour scanner ou gérer ses billets. Vous pouvez aussi choisir un autre événement en haut.</p>
+      <label for="lockCode">Code de l'événement<input id="lockCode" type="password" autocomplete="off" required></label>
+      <div class="err" id="lockErr"></div>
+      <button class="btn primary" type="submit">Ouvrir l'événement</button>
+    </form>
+  </section>
+
   <!-- SCAN -->
   <section class="panel" id="p-scan">
     <div class="evhead" style="margin-top:12px">
@@ -242,6 +252,7 @@ details[open] summary::after{content:"–"}
           <label for="evDate">Date<input id="evDate" type="date"></label>
           <label for="evPlace">Lieu<input id="evPlace" placeholder="Salle, ville"></label>
         </div>
+        <label for="evCode">Code de l'événement (4 caractères minimum) — à donner aux personnes qui scannent cet événement<input id="evCode" type="text" autocomplete="off" required minlength="4"></label>
         <button class="btn primary" type="submit">Créer l'événement</button>
       </form>
     </details>
@@ -321,6 +332,11 @@ details[open] summary::after{content:"–"}
       <select id="fmt2" aria-label="Format des billets" style="flex:0 1 auto;width:auto;padding:8px 10px"><option value="simple">QR codes simples</option><option value="elec" selected>Billets électroniques (affiche + QR)</option><option value="papier">Billets papier (QR sur votre modèle)</option></select>
     </div>
     <div class="card list" id="list"></div>
+    <form class="card panel" id="ecodeForm" autocomplete="off">
+      <strong>Code de cet événement</strong>
+      <p class="muted" style="margin:0" id="ecodeInfo">Chaque personne qui scanne doit entrer ce code après avoir choisi l'événement.</p>
+      <div class="row"><input id="newEcode" type="text" autocomplete="off" minlength="4" placeholder="Nouveau code (4 caractères min.)" style="flex:2 1 180px"><button class="btn small" type="submit" style="flex:1 1 120px">Changer le code</button></div>
+    </form>
     <div class="card panel">
       <strong>Supprimer cet événement</strong>
       <p class="muted" style="margin:0">Efface l'événement et tous ses QR codes. Ils seront refusés à l'entrée.</p>
@@ -355,9 +371,15 @@ let evImg = null, evImgEl = null;
 const ls = { get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }, set(k,v){ try{ v==null?localStorage.removeItem(k):localStorage.setItem(k,v); }catch(e){} } };
 
 /* ---------- API ---------- */
+const EVF = new Set(["list_tickets","create_tickets","delete_event","scan","stats","set_used","delete_ticket","get_event_image","set_event_image","get_event_template","set_event_template","set_event_template_zone"]);
+let ecodes = {}; try{ ecodes = JSON.parse(ls.get("sq-ecodes")||"{}")||{}; }catch(e){ ecodes = {}; }
+function ecodeFor(id){ return (id && ecodes[id]) || null; }
+function setEcode(id, c){ if(!id) return; if(c) ecodes[id]=c; else delete ecodes[id]; ls.set("sq-ecodes", JSON.stringify(ecodes)); }
+let locked = false, curTab = "scan";
 async function rpc(fn, args){
   const headers = {"apikey":CFG.key, "Content-Type":"application/json"};
   if(String(CFG.key).startsWith("eyJ")) headers.Authorization = "Bearer "+CFG.key;
+  if(EVF.has(fn) && args && !("p_ecode" in args)) args = {...args, p_ecode: ecodeFor(currentId)};
   const r = await fetch(CFG.url.replace(/\/+$/,"")+"/rest/v1/rpc/"+fn, {method:"POST", headers, body:JSON.stringify(args||{})});
   const txt = await r.text(); let data=null; try{ data = txt ? JSON.parse(txt) : null; }catch(e){}
   if(!r.ok){ const m = (data && (data.message||data.hint)) || txt || r.statusText; const err = new Error(m); err.status=r.status; throw err; }
@@ -366,6 +388,8 @@ async function rpc(fn, args){
 function errMsg(e){
   const m = String(e && e.message || e);
   if(m.includes("ACCES_REFUSE")){ logout(); return "Code d'accès refusé. Reconnectez-vous."; }
+  if(m.includes("CODE_EVENEMENT")){ setEcode(currentId,null); lockOn(); return "Code de l'événement incorrect."; }
+  if(m.includes("CODE_EVT_COURT")) return "Le code de l'événement doit faire au moins 4 caractères.";
   if(m.includes("ADMIN_REQUIS")) return "Action réservée au code organisateur.";
   if(m.includes("CODE_TROP_COURT")) return "Code trop court (6 caractères organisateur, 4 entrée).";
   if(m.includes("CODES_IDENTIQUES")) return "Les deux codes doivent être différents.";
@@ -425,12 +449,37 @@ async function enterApp(){
 /* ---------- tabs ---------- */
 function showTab(name){
   if(role!=="admin") name="scan";
+  curTab = name;
   document.querySelectorAll("nav button").forEach(b=>b.setAttribute("aria-selected", String(b.dataset.tab===name)));
-  ["scan","gen","list"].forEach(n=> $("#p-"+n).hidden = n!==name);
+  ["scan","gen","list"].forEach(n=> $("#p-"+n).hidden = n!==name || (locked && n!=="gen"));
+  $("#p-lock").hidden = !locked;
+  $("#genBox").hidden = !current() || locked; if(locked) $("#lastTicket").hidden = true;
   ls.set("sq-tab",name);
-  if(name!=="scan") stopCam();
-  if(name==="list") loadTickets();
+  if(name!=="scan" || locked) stopCam();
+  if(name==="list" && !locked) loadTickets();
 }
+function lockOn(){ locked = true; const ev=current(); $("#lockEvName").textContent = ev ? ev.name : "—"; $("#lockErr").textContent=""; $("#lockCode").value=""; showTab(curTab); setTimeout(()=>{ try{ $("#lockCode").focus(); }catch(e){} },50); }
+function lockOff(){ locked = false; showTab(curTab); }
+async function ensureUnlocked(){
+  const ev=current(); if(!ev || !ev.has_code){ lockOff(); return true; }
+  const c=ecodeFor(ev.id);
+  if(c){ try{ if(await rpc("check_event_code",{p_pin:pin,p_event:ev.id,p_ecode:c})){ lockOff(); return true; } }catch(e){} setEcode(ev.id,null); }
+  lockOn(); return false;
+}
+async function openEvent(){ if(await ensureUnlocked()){ await loadTickets(); loadEventImage(); } else { tickets=[]; render(); } }
+$("#lockForm").addEventListener("submit", async e=>{
+  e.preventDefault(); const ev=current(); if(!ev) return; const c=$("#lockCode").value.trim(); $("#lockErr").textContent="";
+  try{ const ok = await rpc("check_event_code",{p_pin:pin,p_event:ev.id,p_ecode:c});
+    if(!ok){ $("#lockErr").textContent="Code incorrect pour cet événement."; return; }
+    setEcode(ev.id,c); lockOff(); await loadTickets(); loadEventImage(); toast("Événement ouvert : "+ev.name); }
+  catch(err){ $("#lockErr").textContent = errMsg(err); }
+});
+$("#ecodeForm").addEventListener("submit", async e=>{
+  e.preventDefault(); const ev=current(); if(!ev) return; const c=$("#newEcode").value.trim();
+  if(c.length<4){ toast("Le code de l'événement doit faire au moins 4 caractères."); return; }
+  try{ await rpc("set_event_code",{p_pin:pin,p_event:ev.id,p_code:c}); setEcode(ev.id,c); ev.has_code=true; $("#newEcode").value=""; toast("Code de l'événement modifié. Donnez-le aux personnes qui scannent."); }
+  catch(err){ toast(errMsg(err)); }
+});
 document.querySelectorAll("nav button").forEach(b=>b.addEventListener("click",()=>showTab(b.dataset.tab)));
 
 /* ---------- events ---------- */
@@ -439,7 +488,7 @@ async function loadEvents(selectId){
   let target = selectId || currentId || ls.get("sq-event");
   if(!events.some(e=>e.id===target)) target = events[0] ? events[0].id : null;
   currentId = target; ls.set("sq-event", currentId);
-  renderEvents(); await loadTickets(); loadEventImage();
+  renderEvents(); await openEvent();
 }
 function renderEvents(){
   $("#evSelect").innerHTML = events.length
@@ -448,20 +497,22 @@ function renderEvents(){
   const ev=current(), nm = ev ? ev.name : "Aucun événement";
   $("#scanEvName").textContent=nm; $("#genEvName").textContent=nm; $("#listEvName").textContent=nm;
   $("#scanEvMeta").textContent = ev ? evMeta(ev) : (role==="admin" ? "Créez un événement dans l'onglet Créer." : "Aucun événement n'a encore été créé.");
-  $("#genBox").hidden = !ev; if(!ev) $("#newEvBox").open = true;
+  $("#genBox").hidden = !ev || locked; if(!ev) $("#newEvBox").open = true;
   $("#camBtn").disabled = !ev;
 }
 $("#evSelect").addEventListener("change", async e=>{
   currentId = e.target.value || null; ls.set("sq-event", currentId);
   renderEvents(); showResult("idle","Prêt à scanner",null,"Seuls les QR codes de cet événement sont acceptés, une seule fois chacun.");
-  await loadTickets(); loadEventImage();
+  await openEvent();
 });
 $("#eventForm").addEventListener("submit", async e=>{
   e.preventDefault();
   const name=$("#evName").value.trim(); if(!name) return;
   try{
-    const ev = await rpc("create_event",{p_pin:pin,p_name:name,p_date:$("#evDate").value||null,p_place:$("#evPlace").value.trim()});
-    $("#evName").value=""; $("#evDate").value=""; $("#evPlace").value=""; $("#newEvBox").open=false;
+    const code=$("#evCode").value.trim(); if(code.length<4){ toast("Choisissez un code d'événement d'au moins 4 caractères."); return; }
+    const ev = await rpc("create_event",{p_pin:pin,p_name:name,p_date:$("#evDate").value||null,p_place:$("#evPlace").value.trim(),p_code:code});
+    setEcode(ev.id, code);
+    $("#evName").value=""; $("#evDate").value=""; $("#evPlace").value=""; $("#evCode").value=""; $("#newEvBox").open=false;
     toast("Événement créé : "+name); await loadEvents(ev.id);
   }catch(err){ toast(errMsg(err)); }
 });
@@ -495,7 +546,7 @@ function paintStats(total, inside){
   $("#sIn").textContent=inside; $("#sLeft").textContent=total-inside; $("#sTotal").textContent=total;
   $("#meterBar").style.width = total ? (inside/total*100)+"%" : "0";
 }
-setInterval(()=>{ if(!document.hidden && pin && !$("#p-scan").hidden) refreshStats(); }, 8000);
+setInterval(()=>{ if(!document.hidden && pin && !locked && !$("#p-scan").hidden) refreshStats(); }, 8000);
 function render(){
   const total=tickets.length, inside=tickets.filter(t=>t.used_at).length;
   paintStats(total, inside);
