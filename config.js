@@ -2,5 +2,5 @@
 // (Supabase > Project Settings > API ou bouton "Connect").
 window.SCANQR_CONFIG = {
   url: "https://rmuizifhtsggxlksdiye.supabase.co",
-  key: "COLLER_ICI_CLE_PUBLISHABLE_OU_ANON"
+  key: "sb_publishable_4tvpXm4B81yXFh6NXyA0jA_6niowoDU"
 };
