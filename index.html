@@ -697,10 +697,10 @@ function downloadPdfImg(list, ev){
     const k=i%n; if(i>0&&k===0) doc.addPage();
     const x=mx+(k%cols)*cw, y=my+Math.floor(k/cols)*ch;
     if(n>1){ doc.setLineDashPattern([1,1.5],0); doc.setDrawColor(190); doc.rect(x,y,cw,ch); }
-    const qs=Math.min(cw*0.66, ch*0.52), block=qs;
+    const qs=Math.min(cw*0.75, ch*0.6), block=qs;
     let iw=cw-8*s, ih=iw*r; const maxH=ch-block-14*s; if(ih>maxH){ ih=maxH; iw=ih/r; }
     doc.addImage(evImg,"JPEG",x+(cw-iw)/2,y+4*s,iw,ih);
-    const top=y+4*s+ih, qy=top+5*s;
+    const top=y+4*s+ih, qy=top+2*s;
     doc.addImage(qrCanvas(t.code,12).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
   });
   doc.save("billets-"+slug(ev?ev.name:"evenement")+".pdf");
