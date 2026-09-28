@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#15171C">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Scan QR">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>Scan QR</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -161,6 +167,8 @@ details[open] summary::after{content:"–"}
     <label for="loginPin">Code d'accès<input id="loginPin" type="password" autocomplete="current-password" required></label>
     <div class="err" id="loginErr"></div>
     <button class="btn primary" type="submit">Entrer</button>
+    <button class="btn" id="installBtn2" type="button" hidden>Installer l'application</button>
+    <p class="muted" id="iosHint" hidden style="margin:0">Sur iPhone : touchez Partager ⬆️ puis « Sur l'écran d'accueil » pour installer l'application.</p>
   </form>
 </div>
 
@@ -172,7 +180,7 @@ details[open] summary::after{content:"–"}
         <svg viewBox="0 0 30 30" aria-hidden="true"><rect x="1" y="1" width="28" height="28" rx="8" fill="var(--ink)"/><rect x="6" y="6" width="7" height="7" rx="1.5" fill="var(--bg)"/><rect x="17" y="6" width="7" height="7" rx="1.5" fill="var(--bg)"/><rect x="6" y="17" width="7" height="7" rx="1.5" fill="var(--bg)"/><rect x="17" y="17" width="3" height="3" fill="var(--accent)"/><rect x="21" y="21" width="3" height="3" fill="var(--accent)"/></svg>
         Scan QR
       </div>
-      <div class="evsel"><label for="evSelect" class="sr">Événement</label><select id="evSelect"></select></div>
+      <div class="evsel"><button class="btn small" id="installBtn" type="button" hidden>Installer</button><label for="evSelect" class="sr">Événement</label><select id="evSelect"></select></div>
     </div>
     <nav role="tablist" id="nav">
       <button role="tab" aria-selected="true" data-tab="scan">Scanner</button>
@@ -996,6 +1004,17 @@ $("#imgInput").addEventListener("change", async e=>{
   checkCode(txt);
 });
 $("#manualForm").addEventListener("submit",e=>{ e.preventDefault(); const v=$("#manualCode").value.trim(); if(v){ checkCode(v); $("#manualCode").value=""; } });
+
+/* ---------- application installable ---------- */
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+let deferredPrompt=null;
+const standalone = (window.matchMedia && matchMedia("(display-mode: standalone)").matches) || navigator.standalone;
+const instBtns=["#installBtn","#installBtn2"];
+window.addEventListener("beforeinstallprompt",e=>{ e.preventDefault(); deferredPrompt=e; if(!standalone) instBtns.forEach(s=>$(s).hidden=false); });
+async function doInstall(){ if(!deferredPrompt) return; deferredPrompt.prompt(); try{ await deferredPrompt.userChoice; }catch(e){} deferredPrompt=null; instBtns.forEach(s=>$(s).hidden=true); }
+instBtns.forEach(s=>$(s).addEventListener("click",doInstall));
+window.addEventListener("appinstalled",()=>{ instBtns.forEach(s=>$(s).hidden=true); toast("Application installée"); });
+if(/iphone|ipad|ipod/i.test(navigator.userAgent) && !standalone) $("#iosHint").hidden=false;
 
 boot();
 })();
