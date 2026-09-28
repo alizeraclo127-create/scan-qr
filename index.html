@@ -647,12 +647,12 @@ async function loadTemplate(){
   tplData=null; tplEl=null; tplZone=null; draftZone=null; $("#tplMsg").textContent=""; paintTpl();
   if(role!=="admin"||!currentId) return; const id=currentId;
   try{ const d=await rpc("get_event_template",{p_pin:pin,p_event:id}); if(id!==currentId||!d||!d.data) return; tplData=d.data; tplZone=d.zone||null; tplWidth=Number(d.width)||15; tplEl=await loadImg(tplData); }catch(e){}
-  paintTpl();
+  paintTpl(); if(tplEl && !tplZone) autoZone();
 }
 $("#tplInput").addEventListener("change", async e=>{
   const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f||!currentId) return;
   toast("Envoi du billet modèle…");
-  try{ const d=await shrinkImage(f,2400,2400,0.92); await rpc("set_event_template",{p_pin:pin,p_event:currentId,p_data:d}); tplData=d; tplEl=await loadImg(d); tplZone=null; draftZone=null; paintTpl(); $("#tplMsg").textContent="Tracez maintenant un carré sur l'espace vide du billet, puis cliquez sur « Enregistrer l'emplacement »."; }
+  try{ const d=await shrinkImage(f,2400,2400,0.92); await rpc("set_event_template",{p_pin:pin,p_event:currentId,p_data:d}); tplData=d; tplEl=await loadImg(d); tplZone=null; draftZone=null; paintTpl(); $("#tplMsg").textContent="Tracez maintenant un carré sur l'espace vide du billet, puis cliquez sur « Enregistrer l'emplacement »."; autoZone(); }
   catch(err){ toast(err && err.message ? errMsg(err) : "Image illisible. Essayez un fichier JPG ou PNG."); }
 });
 function relPos(e){ const b=$("#tplImg").getBoundingClientRect(); return {x:Math.min(1,Math.max(0,(e.clientX-b.left)/b.width)), y:Math.min(1,Math.max(0,(e.clientY-b.top)/b.height))}; }
@@ -669,6 +669,32 @@ $("#tplSave").addEventListener("click", async ()=>{
 $("#tplDel").addEventListener("click", async ()=>{
   try{ await rpc("set_event_template",{p_pin:pin,p_event:currentId,p_data:null}); tplData=null; tplEl=null; tplZone=null; draftZone=null; if(fmt()==="papier") setFmt("simple"); paintTpl(); $("#tplMsg").textContent=""; toast("Billet modèle retiré"); }catch(err){ toast(errMsg(err)); }
 });
+function detectZone(img){
+  const W0=img.naturalWidth||img.width, H0=img.naturalHeight||img.height, sc=Math.min(1,360/W0), w=Math.max(1,Math.round(W0*sc)), h=Math.max(1,Math.round(H0*sc));
+  const c=document.createElement("canvas"); c.width=w; c.height=h; const g=c.getContext("2d",{willReadFrequently:true}); g.drawImage(img,0,0,w,h);
+  const d=g.getImageData(0,0,w,h).data, hist=new Array(w).fill(0); let best={s:0};
+  for(let y=0;y<h;y++){
+    for(let x=0;x<w;x++){ const i=(y*w+x)*4; hist[x]=(d[i]>225&&d[i+1]>225&&d[i+2]>225)?hist[x]+1:0; }
+    const st=[];
+    for(let x=0;x<=w;x++){ const hh=x<w?hist[x]:0; let start=x;
+      while(st.length && st[st.length-1][1]>=hh){ const [sx,sh]=st.pop(), rw=x-sx, s=Math.min(rw,sh), sc2=s*100000+rw*sh; if(sc2>(best.k||0)) best={s,k:sc2,x:sx,y:y-sh+1,w:rw,h:sh}; start=sx; }
+      st.push([start,hh]); }
+  }
+  if(!best.s || best.s < Math.min(w,h)*0.12) return null;
+  const ins=0.05; return {x:(best.x+best.w*ins)/w, y:(best.y+best.h*ins)/h, w:best.w*(1-2*ins)/w, h:best.h*(1-2*ins)/h};
+}
+async function autoZone(){
+  if(!tplEl || tplZone) return;
+  const z=detectZone(tplEl); if(!z){ $("#tplMsg").textContent="Espace vide non détecté automatiquement : tracez un carré sur l'espace vide du billet, puis cliquez sur « Enregistrer l'emplacement »."; return; }
+  try{ await rpc("set_event_template_zone",{p_pin:pin,p_event:currentId,p_zone:z,p_width:tplWidth}); tplZone=z; draftZone=null; setFmt("papier"); paintTpl();
+    $("#tplMsg").textContent="Espace vide détecté automatiquement (cadre bleu) et format « Billets papier » sélectionné. Si le cadre n'est pas au bon endroit, retracez-le puis cliquez sur « Enregistrer l'emplacement »."; }
+  catch(err){ toast(errMsg(err)); }
+}
+function formatOk(){
+  if(fmt()==="papier" && !usePaper()){ toast(tplData ? "Enregistrez d'abord l'emplacement du QR sur votre billet papier (onglet Créer)." : "Importez d'abord votre billet modèle dans « Billets papier » (onglet Créer)."); return false; }
+  if(fmt()==="elec" && !useImg() && tplZone && tplEl){ setFmt("papier"); toast("Format « Billets papier » sélectionné."); }
+  return true;
+}
 function ticketCanvasPaper(t){
   const W=tplEl.naturalWidth||tplEl.width, H=tplEl.naturalHeight||tplEl.height, c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
   g.drawImage(tplEl,0,0,W,H); const z=tplZone, zw=z.w*W, zh=z.h*H, s=Math.min(zw,zh);
@@ -736,9 +762,10 @@ function ticketCanvasImg(t, ev, img){
   const size=720, ox=(W-size)/2, oy=ih+110; g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12),ox,oy,size,size);
   return c;
 }
-function downloadTicket(t){ ticketCanvas(t, current()).toBlob(b=>saveBlob(b,"billet-"+slug(label(t))+"-"+t.code+".png"),"image/png"); }
+function downloadTicket(t){ if(!formatOk()) return; ticketCanvas(t, current()).toBlob(b=>saveBlob(b,"billet-"+slug(label(t))+"-"+t.code+".png"),"image/png"); }
 function downloadPdf(list){
   const ev=current(); if(!list.length){ toast("Aucun QR code à imprimer."); return; }
+  if(!formatOk()) return;
   if(!window.jspdf){ toast("Le module PDF n'a pas chargé. Rechargez la page."); return; }
   if(usePaper()) return downloadPdfPaper(list, ev);
   if(useImg()) return downloadPdfImg(list, ev);
