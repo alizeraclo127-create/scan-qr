@@ -258,9 +258,20 @@ details[open] summary::after{content:"–"}
               <input id="visuInput" class="sr" type="file" accept="image/*">
             </div>
           </div>
-          <label class="check" for="withImg"><input type="checkbox" id="withImg" checked> Mettre le visuel sur les billets téléchargés (PNG et PDF)</label>
         </div>
       </details>
+      <details class="card" id="tplBox" style="padding:14px">
+        <summary>Billets papier <span class="muted" id="tplState" style="font-weight:400">(optionnel)</span></summary>
+        <div class="panel" style="margin-top:12px">
+          <span class="muted">Importez l'image de votre billet modèle (JPG ou PNG) avec un espace vide. Tracez ensuite un carré sur l'espace vide, avec la souris ou le doigt : le QR code sera imprimé exactement à cet endroit.</span>
+          <div class="row"><label class="btn small" for="tplInput" style="flex:0 0 auto;flex-direction:row;color:var(--ink);font-size:13px">Importer le billet modèle</label><button class="btn small danger" id="tplDel" type="button" style="flex:0 0 auto" hidden>Retirer le modèle</button></div>
+          <input id="tplInput" class="sr" type="file" accept="image/*">
+          <div id="tplWrap" hidden style="position:relative;touch-action:none;user-select:none;-webkit-user-select:none;cursor:crosshair"><img id="tplImg" alt="Billet modèle" draggable="false" style="display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line)"><div id="tplRect" style="position:absolute;border:3px solid var(--accent);background:rgba(59,53,219,.18);display:none;pointer-events:none"></div></div>
+          <div class="row" id="tplSizeRow" hidden><label for="tplWidth">Largeur du billet imprimé (cm)<input id="tplWidth" type="number" min="3" max="19" step="0.5" value="15"></label><div style="display:flex;align-items:flex-end"><button class="btn primary" id="tplSave" type="button" style="width:100%">Enregistrer l'emplacement</button></div></div>
+          <p class="muted" id="tplMsg" style="margin:0"></p>
+        </div>
+      </details>
+      <label for="fmt">Format des billets téléchargés (PNG et PDF)<select id="fmt"><option value="simple">QR codes simples</option><option value="elec" selected>Billets électroniques (affiche + QR)</option><option value="papier">Billets papier (QR sur votre modèle)</option></select></label>
       <div class="seg" role="group" aria-label="Type">
         <button type="button" id="modeTicket" aria-pressed="true">Billets nominatifs<small>un nom par QR</small></button>
         <button type="button" id="modeQr" aria-pressed="false">QR codes simples<small>sans nom, numérotés</small></button>
@@ -307,7 +318,7 @@ details[open] summary::after{content:"–"}
       <button class="btn small" id="pdfBtn" type="button">Planche PDF à imprimer</button>
       <button class="btn small" id="exportBtn" type="button">Exporter en CSV</button>
       <button class="btn small" id="refreshBtn" type="button">Actualiser</button>
-      <span id="withImg2Wrap" style="flex:0 0 auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap" hidden><label class="check" for="withImg2"><input type="checkbox" id="withImg2" checked> Avec visuel</label></span>
+      <select id="fmt2" aria-label="Format des billets" style="flex:0 1 auto;width:auto;padding:8px 10px"><option value="simple">QR codes simples</option><option value="elec" selected>Billets électroniques (affiche + QR)</option><option value="papier">Billets papier (QR sur votre modèle)</option></select>
     </div>
     <div class="card list" id="list"></div>
     <div class="card panel">
@@ -556,7 +567,7 @@ function showCreated(made){
     $("#dlLast").onclick=()=>downloadTicket(t);
   } else {
     box.innerHTML = `<div class="panel"><div class="t-name">${made.length} QR codes créés</div>
-      <span class="muted">N° ${pad(made[0].num)} à ${pad(made[made.length-1].num)} · ${useImg()?(perPage()>1?perPage()+" billets":"1 billet"):"12 QR"} par page A4, à imprimer puis découper.</span>
+      <span class="muted">N° ${pad(made[0].num)} à ${pad(made[made.length-1].num)} · ${usePaper()?"Billets papier":(useImg()?"1 billet":"12 QR")} par page A4, à imprimer puis découper.</span>
       <div><button class="btn primary small" id="pdfLast" type="button">Télécharger la planche PDF</button></div></div>`;
   }
   $("#pdfLast").onclick=()=>downloadPdf(made);
@@ -586,38 +597,100 @@ $("#qrMode").addEventListener("submit", async e=>{
 });
 
 /* ---------- visuel ---------- */
-function useImg(){ return !!(evImgEl && $("#withImg").checked); }
+function useImg(){ return !!(evImgEl && fmt()==="elec"); }
 function paintVisu(){
   $("#visuPrev").innerHTML = evImg ? '<img alt="Visuel de l\'événement" src="'+evImg+'">' : '<div class="ph">Aucun visuel</div>';
   $("#visuDel").hidden = !evImg; $("#visuState").textContent = evImg ? "(activé)" : "(optionnel)";
-  $("#withImg2Wrap").hidden = !evImg;
 }
 function loadImg(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src; }); }
 async function loadEventImage(){
+  loadTemplate();
   evImg=null; evImgEl=null; paintVisu();
   if(role!=="admin" || !currentId) return;
   const id=currentId;
   try{ const d = await rpc("get_event_image",{p_pin:pin,p_event:id}); if(id!==currentId) return; if(d){ evImg=d; evImgEl=await loadImg(d); } }catch(e){}
   paintVisu();
 }
-async function shrinkImage(file){
+async function shrinkImage(file, mw=1400, mh=1800, q=0.85){
   const url=URL.createObjectURL(file); const img=await loadImg(url);
-  const s=Math.min(1,1400/img.width,1800/img.height), w=Math.round(img.width*s), h=Math.round(img.height*s);
+  const s=Math.min(1,mw/img.width,mh/img.height), w=Math.round(img.width*s), h=Math.round(img.height*s);
   const c=document.createElement("canvas"); c.width=w; c.height=h; const g=c.getContext("2d");
   g.fillStyle="#fff"; g.fillRect(0,0,w,h); g.drawImage(img,0,0,w,h); URL.revokeObjectURL(url);
-  return c.toDataURL("image/jpeg",0.85);
+  return c.toDataURL("image/jpeg",q);
 }
 $("#visuInput").addEventListener("change", async e=>{
   const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f||!currentId) return;
   toast("Envoi du visuel…");
-  try{ const d=await shrinkImage(f); await rpc("set_event_image",{p_pin:pin,p_event:currentId,p_data:d}); evImg=d; evImgEl=await loadImg(d); $("#withImg").checked=true; $("#withImg2").checked=true; paintVisu(); toast("Visuel enregistré pour cet événement"); }
+  try{ const d=await shrinkImage(f); await rpc("set_event_image",{p_pin:pin,p_event:currentId,p_data:d}); evImg=d; evImgEl=await loadImg(d); setFmt("elec"); paintVisu(); toast("Visuel enregistré pour cet événement"); }
   catch(err){ toast(err && err.message ? errMsg(err) : "Image illisible. Essayez un fichier JPG ou PNG."); }
 });
 $("#visuDel").addEventListener("click", async ()=>{
-  try{ await rpc("set_event_image",{p_pin:pin,p_event:currentId,p_data:null}); evImg=null; evImgEl=null; paintVisu(); toast("Visuel retiré. Les QR codes redeviennent simples."); }catch(err){ toast(errMsg(err)); }
+  try{ await rpc("set_event_image",{p_pin:pin,p_event:currentId,p_data:null}); evImg=null; evImgEl=null; if(fmt()==="elec") setFmt("simple"); paintVisu(); toast("Visuel retiré. Les QR codes redeviennent simples."); }catch(err){ toast(errMsg(err)); }
 });
-$("#withImg").addEventListener("change",()=>{ $("#withImg2").checked=$("#withImg").checked; });
-$("#withImg2").addEventListener("change",()=>{ $("#withImg").checked=$("#withImg2").checked; });
+
+/* ---------- billets papier ---------- */
+let tplData=null, tplEl=null, tplZone=null, tplWidth=15, drawStart=null, draftZone=null;
+function fmt(){ return $("#fmt").value; }
+function setFmt(v){ $("#fmt").value=v; $("#fmt2").value=v; ls.set("sq-fmt",v); }
+$("#fmt").addEventListener("change",()=>setFmt($("#fmt").value));
+$("#fmt2").addEventListener("change",()=>setFmt($("#fmt2").value));
+{ const v=ls.get("sq-fmt"); if(v) setFmt(v); }
+function usePaper(){ return !!(tplEl && tplZone && fmt()==="papier"); }
+function showRect(z){ const r=$("#tplRect"); if(!z){ r.style.display="none"; return; } r.style.display="block"; r.style.left=(z.x*100)+"%"; r.style.top=(z.y*100)+"%"; r.style.width=(z.w*100)+"%"; r.style.height=(z.h*100)+"%"; }
+function paintTpl(){
+  $("#tplWrap").hidden=!tplData; $("#tplSizeRow").hidden=!tplData; $("#tplDel").hidden=!tplData;
+  $("#tplState").textContent = tplData ? (tplZone?"(prêt)":"(tracez l'emplacement du QR)") : "(optionnel)";
+  if(tplData){ if($("#tplImg").getAttribute("src")!==tplData) $("#tplImg").src=tplData; } else $("#tplImg").removeAttribute("src");
+  $("#tplWidth").value=tplWidth; showRect(draftZone||tplZone);
+}
+async function loadTemplate(){
+  tplData=null; tplEl=null; tplZone=null; draftZone=null; $("#tplMsg").textContent=""; paintTpl();
+  if(role!=="admin"||!currentId) return; const id=currentId;
+  try{ const d=await rpc("get_event_template",{p_pin:pin,p_event:id}); if(id!==currentId||!d||!d.data) return; tplData=d.data; tplZone=d.zone||null; tplWidth=Number(d.width)||15; tplEl=await loadImg(tplData); }catch(e){}
+  paintTpl();
+}
+$("#tplInput").addEventListener("change", async e=>{
+  const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f||!currentId) return;
+  toast("Envoi du billet modèle…");
+  try{ const d=await shrinkImage(f,2400,2400,0.92); await rpc("set_event_template",{p_pin:pin,p_event:currentId,p_data:d}); tplData=d; tplEl=await loadImg(d); tplZone=null; draftZone=null; paintTpl(); $("#tplMsg").textContent="Tracez maintenant un carré sur l'espace vide du billet, puis cliquez sur « Enregistrer l'emplacement »."; }
+  catch(err){ toast(err && err.message ? errMsg(err) : "Image illisible. Essayez un fichier JPG ou PNG."); }
+});
+function relPos(e){ const b=$("#tplImg").getBoundingClientRect(); return {x:Math.min(1,Math.max(0,(e.clientX-b.left)/b.width)), y:Math.min(1,Math.max(0,(e.clientY-b.top)/b.height))}; }
+$("#tplWrap").addEventListener("pointerdown",e=>{ if(!tplData) return; e.preventDefault(); drawStart=relPos(e); try{ $("#tplWrap").setPointerCapture(e.pointerId); }catch(_){} });
+$("#tplWrap").addEventListener("pointermove",e=>{ if(!drawStart) return; const p=relPos(e); draftZone={x:Math.min(p.x,drawStart.x),y:Math.min(p.y,drawStart.y),w:Math.abs(p.x-drawStart.x),h:Math.abs(p.y-drawStart.y)}; showRect(draftZone); });
+function endDraw(){ if(!drawStart) return; drawStart=null; if(draftZone && (draftZone.w<0.02||draftZone.h<0.02)){ draftZone=null; showRect(tplZone); } else if(draftZone){ $("#tplMsg").textContent="Emplacement tracé. Cliquez sur « Enregistrer l'emplacement »."; } }
+$("#tplWrap").addEventListener("pointerup",endDraw); $("#tplWrap").addEventListener("pointercancel",endDraw);
+$("#tplSave").addEventListener("click", async ()=>{
+  const z=draftZone||tplZone, w=Math.max(3,Math.min(19,parseFloat($("#tplWidth").value)||15));
+  if(!z){ $("#tplMsg").textContent="Tracez d'abord un carré sur l'espace vide du billet."; return; }
+  try{ await rpc("set_event_template_zone",{p_pin:pin,p_event:currentId,p_zone:z,p_width:w}); tplZone=z; draftZone=null; tplWidth=w; setFmt("papier"); paintTpl(); $("#tplMsg").textContent="Emplacement enregistré. Le format « Billets papier » est sélectionné."; toast("Billet papier prêt"); }
+  catch(err){ toast(errMsg(err)); }
+});
+$("#tplDel").addEventListener("click", async ()=>{
+  try{ await rpc("set_event_template",{p_pin:pin,p_event:currentId,p_data:null}); tplData=null; tplEl=null; tplZone=null; draftZone=null; if(fmt()==="papier") setFmt("simple"); paintTpl(); $("#tplMsg").textContent=""; toast("Billet modèle retiré"); }catch(err){ toast(errMsg(err)); }
+});
+function ticketCanvasPaper(t){
+  const W=tplEl.naturalWidth||tplEl.width, H=tplEl.naturalHeight||tplEl.height, c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
+  g.drawImage(tplEl,0,0,W,H); const z=tplZone, zw=z.w*W, zh=z.h*H, s=Math.min(zw,zh);
+  g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12), z.x*W+(zw-s)/2, z.y*H+(zh-s)/2, s, s);
+  return c;
+}
+function downloadPdfPaper(list, ev){
+  const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"});
+  const r=(tplEl.naturalHeight||tplEl.height)/(tplEl.naturalWidth||tplEl.width);
+  let tw=Math.min(200,tplWidth*10), th=tw*r; if(th>287){ th=287; tw=th/r; }
+  const cols=Math.max(1,Math.floor(200/tw)), rows=Math.max(1,Math.floor(287/th)), per=cols*rows;
+  const ox=(210-cols*tw)/2, oy=(297-rows*th)/2, z=tplZone;
+  [...list].sort((a,b)=>a.num-b.num).forEach((t,i)=>{
+    const k=i%per; if(i>0&&k===0) doc.addPage();
+    const x=ox+(k%cols)*tw, y=oy+Math.floor(k/cols)*th;
+    doc.addImage(tplData,"JPEG",x,y,tw,th,"tpl","FAST");
+    const zw=z.w*tw, zh=z.h*th, s=Math.min(zw,zh);
+    doc.addImage(qrCanvas(t.code,10).toDataURL("image/png"),"PNG",x+z.x*tw+(zw-s)/2,y+z.y*th+(zh-s)/2,s,s);
+    doc.setLineDashPattern([1,1.5],0); doc.setDrawColor(170); doc.rect(x,y,tw,th);
+  });
+  doc.save("billets-papier-"+slug(ev?ev.name:"evenement")+".pdf");
+}
 
 /* ---------- QR drawing / export ---------- */
 function qrCanvas(code, cell){
@@ -634,6 +707,7 @@ function fitText(g, text, x, y, maxW, size, weight, fam, align){
   g.fillText(text, x, y);
 }
 function ticketCanvas(t, ev){
+  if(usePaper()) return ticketCanvasPaper(t);
   if(useImg()) return ticketCanvasImg(t, ev, evImgEl);
   const W=720, H=1040, c=document.createElement("canvas"); c.width=W; c.height=H;
   const g=c.getContext("2d"); g.textBaseline="middle";
@@ -666,6 +740,7 @@ function downloadTicket(t){ ticketCanvas(t, current()).toBlob(b=>saveBlob(b,"bil
 function downloadPdf(list){
   const ev=current(); if(!list.length){ toast("Aucun QR code à imprimer."); return; }
   if(!window.jspdf){ toast("Le module PDF n'a pas chargé. Rechargez la page."); return; }
+  if(usePaper()) return downloadPdfPaper(list, ev);
   if(useImg()) return downloadPdfImg(list, ev);
   const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"});
   const cols=3, rows=4, mx=8, my=10, cw=(210-2*mx)/cols, ch=(297-2*my)/rows;
