@@ -120,6 +120,12 @@ details summary::-webkit-details-marker{display:none}
 details summary::after{content:"+";font:600 20px/1 var(--mono);color:var(--muted)}
 details[open] summary::after{content:"–"}
 .err{color:var(--bad);font-size:14px;min-height:1.2em}
+.visu{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:center}
+.visu img{width:120px;height:120px;object-fit:cover;border-radius:10px;border:1px solid var(--line);background:var(--surface-2);display:block}
+.visu .ph{width:120px;height:120px;border-radius:10px;border:1px dashed var(--line);display:grid;place-items:center;color:var(--muted);font-size:12px;text-align:center;padding:8px}
+.check{flex-direction:row;align-items:center;gap:8px;font-size:14px;color:var(--ink)}
+.check input{width:auto}
+@media (max-width:460px){.visu{grid-template-columns:1fr}}
 @keyframes pop{from{transform:scale(.97)}to{transform:scale(1)}}
 .pop{animation:pop .25s ease-out}
 @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
@@ -242,6 +248,19 @@ details[open] summary::after{content:"–"}
 
     <div class="card panel" id="genBox">
       <div class="evhead"><span class="eyebrow">Pour l'événement</span><span class="evname" id="genEvName">—</span></div>
+      <details class="card" id="visuBox" style="padding:14px">
+        <summary>Visuel en haut des billets <span class="muted" id="visuState" style="font-weight:400">(optionnel)</span></summary>
+        <div class="panel" style="margin-top:12px">
+          <div class="visu"><div id="visuPrev"><div class="ph">Aucun visuel</div></div>
+            <div class="panel" style="gap:8px">
+              <span class="muted">Affiche, logo ou photo de l'événement. Le visuel s'affiche en haut du billet, le QR code en bas. Sans visuel, les QR codes restent simples.</span>
+              <div class="row"><label class="btn small" for="visuInput" style="flex:0 0 auto;flex-direction:row;color:var(--ink);font-size:13px">Importer une image</label><button class="btn small danger" id="visuDel" type="button" style="flex:0 0 auto" hidden>Retirer le visuel</button></div>
+              <input id="visuInput" class="sr" type="file" accept="image/*">
+            </div>
+          </div>
+          <label class="check" for="withImg"><input type="checkbox" id="withImg" checked> Mettre le visuel sur les billets téléchargés (PNG et PDF)</label>
+        </div>
+      </details>
       <div class="seg" role="group" aria-label="Type">
         <button type="button" id="modeTicket" aria-pressed="true">Billets nominatifs<small>un nom par QR</small></button>
         <button type="button" id="modeQr" aria-pressed="false">QR codes simples<small>sans nom, numérotés</small></button>
@@ -288,6 +307,7 @@ details[open] summary::after{content:"–"}
       <button class="btn small" id="pdfBtn" type="button">Planche PDF à imprimer</button>
       <button class="btn small" id="exportBtn" type="button">Exporter en CSV</button>
       <button class="btn small" id="refreshBtn" type="button">Actualiser</button>
+      <label class="check" for="withImg2" id="withImg2Wrap" style="flex:0 0 auto" hidden><input type="checkbox" id="withImg2" checked> Avec visuel</label>
     </div>
     <div class="card list" id="list"></div>
     <div class="card panel">
@@ -320,6 +340,7 @@ const CODE_RE = /([A-HJ-NP-Z2-9]{4})-?([A-HJ-NP-Z2-9]{4})/;
 const ICON_OK = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M7 12.5l3.2 3.2L17 9"/></svg>';
 const ICON_NO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M8 8l8 8M16 8l-8 8"/></svg>';
 let pin = null, role = null, events = [], currentId = null, tickets = [], mode = "ticket", busy = false;
+let evImg = null, evImgEl = null;
 const ls = { get(k){ try{ return localStorage.getItem(k); }catch(e){ return null; } }, set(k,v){ try{ v==null?localStorage.removeItem(k):localStorage.setItem(k,v); }catch(e){} } };
 
 /* ---------- API ---------- */
@@ -407,7 +428,7 @@ async function loadEvents(selectId){
   let target = selectId || currentId || ls.get("sq-event");
   if(!events.some(e=>e.id===target)) target = events[0] ? events[0].id : null;
   currentId = target; ls.set("sq-event", currentId);
-  renderEvents(); await loadTickets();
+  renderEvents(); await loadTickets(); loadEventImage();
 }
 function renderEvents(){
   $("#evSelect").innerHTML = events.length
@@ -422,7 +443,7 @@ function renderEvents(){
 $("#evSelect").addEventListener("change", async e=>{
   currentId = e.target.value || null; ls.set("sq-event", currentId);
   renderEvents(); showResult("idle","Prêt à scanner",null,"Seuls les QR codes de cet événement sont acceptés, une seule fois chacun.");
-  await loadTickets();
+  await loadTickets(); loadEventImage();
 });
 $("#eventForm").addEventListener("submit", async e=>{
   e.preventDefault();
@@ -535,7 +556,7 @@ function showCreated(made){
     $("#dlLast").onclick=()=>downloadTicket(t);
   } else {
     box.innerHTML = `<div class="panel"><div class="t-name">${made.length} QR codes créés</div>
-      <span class="muted">N° ${pad(made[0].num)} à ${pad(made[made.length-1].num)} · 12 par page A4, à imprimer puis découper.</span>
+      <span class="muted">N° ${pad(made[0].num)} à ${pad(made[made.length-1].num)} · ${useImg()?"4 billets":"12 QR"} par page A4, à imprimer puis découper.</span>
       <div><button class="btn primary small" id="pdfLast" type="button">Télécharger la planche PDF</button></div></div>`;
   }
   $("#pdfLast").onclick=()=>downloadPdf(made);
@@ -564,6 +585,40 @@ $("#qrMode").addEventListener("submit", async e=>{
   showCreated(made);
 });
 
+/* ---------- visuel ---------- */
+function useImg(){ return !!(evImgEl && $("#withImg").checked); }
+function paintVisu(){
+  $("#visuPrev").innerHTML = evImg ? '<img alt="Visuel de l\'événement" src="'+evImg+'">' : '<div class="ph">Aucun visuel</div>';
+  $("#visuDel").hidden = !evImg; $("#visuState").textContent = evImg ? "(activé)" : "(optionnel)";
+  $("#withImg2Wrap").hidden = !evImg;
+}
+function loadImg(src){ return new Promise((res,rej)=>{ const i=new Image(); i.onload=()=>res(i); i.onerror=rej; i.src=src; }); }
+async function loadEventImage(){
+  evImg=null; evImgEl=null; paintVisu();
+  if(role!=="admin" || !currentId) return;
+  const id=currentId;
+  try{ const d = await rpc("get_event_image",{p_pin:pin,p_event:id}); if(id!==currentId) return; if(d){ evImg=d; evImgEl=await loadImg(d); } }catch(e){}
+  paintVisu();
+}
+async function shrinkImage(file){
+  const url=URL.createObjectURL(file); const img=await loadImg(url);
+  const s=Math.min(1,1400/img.width,1800/img.height), w=Math.round(img.width*s), h=Math.round(img.height*s);
+  const c=document.createElement("canvas"); c.width=w; c.height=h; const g=c.getContext("2d");
+  g.fillStyle="#fff"; g.fillRect(0,0,w,h); g.drawImage(img,0,0,w,h); URL.revokeObjectURL(url);
+  return c.toDataURL("image/jpeg",0.85);
+}
+$("#visuInput").addEventListener("change", async e=>{
+  const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f||!currentId) return;
+  toast("Envoi du visuel…");
+  try{ const d=await shrinkImage(f); await rpc("set_event_image",{p_pin:pin,p_event:currentId,p_data:d}); evImg=d; evImgEl=await loadImg(d); $("#withImg").checked=true; $("#withImg2").checked=true; paintVisu(); toast("Visuel enregistré pour cet événement"); }
+  catch(err){ toast(err && err.message ? errMsg(err) : "Image illisible. Essayez un fichier JPG ou PNG."); }
+});
+$("#visuDel").addEventListener("click", async ()=>{
+  try{ await rpc("set_event_image",{p_pin:pin,p_event:currentId,p_data:null}); evImg=null; evImgEl=null; paintVisu(); toast("Visuel retiré. Les QR codes redeviennent simples."); }catch(err){ toast(errMsg(err)); }
+});
+$("#withImg").addEventListener("change",()=>{ $("#withImg2").checked=$("#withImg").checked; });
+$("#withImg2").addEventListener("change",()=>{ $("#withImg").checked=$("#withImg2").checked; });
+
 /* ---------- QR drawing / export ---------- */
 function qrCanvas(code, cell){
   const qr = qrcode(0,"M"); qr.addData(code); qr.make();
@@ -579,6 +634,7 @@ function fitText(g, text, x, y, maxW, size, weight, fam, align){
   g.fillText(text, x, y);
 }
 function ticketCanvas(t, ev){
+  if(useImg()) return ticketCanvasImg(t, ev, evImgEl);
   const W=720, H=1040, c=document.createElement("canvas"); c.width=W; c.height=H;
   const g=c.getContext("2d"); g.textBaseline="middle";
   g.fillStyle="#FFFFFF"; g.fillRect(0,0,W,H);
@@ -595,10 +651,25 @@ function ticketCanvas(t, ev){
   g.fillText((t.cat||"Standard").toUpperCase()+"  ·  valable pour une seule entrée", W/2, oy+size+178);
   return c;
 }
+function ticketCanvasImg(t, ev, img){
+  const W=1080, ih=Math.round(Math.min(img.height*W/img.width, 1350)), H=ih+860;
+  const c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d"); g.textBaseline="middle";
+  g.fillStyle="#FFFFFF"; g.fillRect(0,0,W,H);
+  const sh=Math.min(img.height, ih*img.width/W); g.drawImage(img,0,(img.height-sh)/2,img.width,sh,0,0,W,ih);
+  g.fillStyle="#EEF0EB"; for(let x=24;x<W;x+=48){ g.beginPath(); g.arc(x,ih,9,0,Math.PI*2); g.fill(); }
+  g.fillStyle="#5B616C"; g.font="500 28px 'IBM Plex Sans', sans-serif"; g.textAlign="center";
+  g.fillText([ev?ev.name:"", fmtDate(ev&&ev.date)].filter(Boolean).join("  ·  ").slice(0,70), W/2, ih+60);
+  const size=520, ox=(W-size)/2, oy=ih+100; g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12),ox,oy,size,size);
+  g.fillStyle="#15171C"; fitText(g, label(t), W/2, oy+size+60, W-120, 48, "800", "'Bricolage Grotesque', sans-serif", "center");
+  g.fillStyle="#3B35DB"; g.font="600 38px 'IBM Plex Mono', monospace"; g.textAlign="center"; g.fillText(t.code, W/2, oy+size+125);
+  g.fillStyle="#5B616C"; g.font="500 26px 'IBM Plex Sans', sans-serif"; g.fillText((t.cat||"Standard").toUpperCase()+"  ·  valable pour une seule entrée", W/2, oy+size+180);
+  return c;
+}
 function downloadTicket(t){ ticketCanvas(t, current()).toBlob(b=>saveBlob(b,"billet-"+slug(label(t))+"-"+t.code+".png"),"image/png"); }
 function downloadPdf(list){
   const ev=current(); if(!list.length){ toast("Aucun QR code à imprimer."); return; }
   if(!window.jspdf){ toast("Le module PDF n'a pas chargé. Rechargez la page."); return; }
+  if(useImg()) return downloadPdfImg(list, ev);
   const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"});
   const cols=3, rows=4, mx=8, my=10, cw=(210-2*mx)/cols, ch=(297-2*my)/rows;
   [...list].sort((a,b)=>a.num-b.num).forEach((t,i)=>{
@@ -618,6 +689,24 @@ function downloadPdf(list){
     doc.text((t.cat||"Standard").toUpperCase()+" - une seule entrée", x+cw/2, y+ch-2.5, {align:"center"});
   });
   doc.save("qr-"+slug(ev?ev.name:"evenement")+".pdf");
+}
+function downloadPdfImg(list, ev){
+  const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"});
+  const cols=2, mx=4, my=4, cw=(210-2*mx)/2, ch=(297-2*my)/2, r=evImgEl.height/evImgEl.width;
+  [...list].sort((a,b)=>a.num-b.num).forEach((t,i)=>{
+    const k=i%4; if(i>0&&k===0) doc.addPage();
+    const x=mx+(k%cols)*cw, y=my+Math.floor(k/cols)*ch;
+    doc.setLineDashPattern([1,1.5],0); doc.setDrawColor(190); doc.rect(x,y,cw,ch);
+    const qs=48, bottom=qs+26; let iw=cw-8, ih=iw*r; const maxH=ch-bottom-8; if(ih>maxH){ ih=maxH; iw=ih/r; }
+    doc.addImage(evImg,"JPEG",x+(cw-iw)/2,y+4,iw,ih);
+    const qy=y+ch-bottom; doc.addImage(qrCanvas(t.code,8).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
+    doc.setTextColor(21,23,28); doc.setFont("helvetica","bold"); doc.setFontSize(11);
+    doc.text(doc.splitTextToSize(label(t),cw-10)[0], x+cw/2, qy+qs+6, {align:"center"});
+    doc.setFont("courier","bold"); doc.setFontSize(11); doc.setTextColor(59,53,219); doc.text(t.code, x+cw/2, qy+qs+12, {align:"center"});
+    doc.setFont("helvetica","normal"); doc.setFontSize(7); doc.setTextColor(91,97,108);
+    doc.text((t.cat||"Standard").toUpperCase()+" - une seule entrée", x+cw/2, qy+qs+17, {align:"center"});
+  });
+  doc.save("billets-"+slug(ev?ev.name:"evenement")+".pdf");
 }
 $("#pdfBtn").addEventListener("click",()=>downloadPdf(tickets));
 $("#exportBtn").addEventListener("click",()=>{
