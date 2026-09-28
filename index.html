@@ -643,16 +643,37 @@ function paintTpl(){
   if(tplData){ if($("#tplImg").getAttribute("src")!==tplData) $("#tplImg").src=tplData; } else $("#tplImg").removeAttribute("src");
   $("#tplWidth").value=tplWidth; showRect(draftZone||tplZone);
 }
+function trimWhite(img){
+  const W=img.naturalWidth||img.width, H=img.naturalHeight||img.height, c=document.createElement("canvas"); c.width=W; c.height=H;
+  const g=c.getContext("2d",{willReadFrequently:true}); g.drawImage(img,0,0); const d=g.getImageData(0,0,W,H).data;
+  const white=i=>(d[i]>232&&d[i+1]>232&&d[i+2]>232)||d[i+3]<20;
+  const rowWhite=y=>{ let n=0; for(let x=0;x<W;x+=2) if(!white((y*W+x)*4)) n++; return n<=W*0.003; };
+  const colWhite=x=>{ let n=0; for(let y=0;y<H;y+=2) if(!white((y*W+x)*4)) n++; return n<=H*0.003; };
+  let t=0,b=H-1,l=0,r=W-1;
+  while(t<b&&rowWhite(t)) t++; while(b>t&&rowWhite(b)) b--; while(l<r&&colWhite(l)) l++; while(r>l&&colWhite(r)) r--;
+  if(t<2&&l<2&&H-1-b<2&&W-1-r<2) return null;
+  const cw=r-l+1, ch=b-t+1; if(cw<W*0.3||ch<H*0.3) return null;
+  const o=document.createElement("canvas"); o.width=cw; o.height=ch; const og=o.getContext("2d"); og.fillStyle="#fff"; og.fillRect(0,0,cw,ch); og.drawImage(img,l,t,cw,ch,0,0,cw,ch);
+  return {data:o.toDataURL("image/jpeg",0.92), box:{l,t,cw,ch,W,H}};
+}
+async function retrim(){
+  const tr=trimWhite(tplEl); if(!tr) return;
+  const {l,t,cw,ch,W,H}=tr.box, z=tplZone, id=currentId;
+  const nz = z ? {x:Math.max(0,(z.x*W-l)/cw), y:Math.max(0,(z.y*H-t)/ch), w:Math.min(1,z.w*W/cw), h:Math.min(1,z.h*H/ch)} : null;
+  try{ await rpc("set_event_template",{p_pin:pin,p_event:id,p_data:tr.data}); if(nz) await rpc("set_event_template_zone",{p_pin:pin,p_event:id,p_zone:nz,p_width:tplWidth});
+    if(id!==currentId) return; tplData=tr.data; tplEl=await loadImg(tr.data); tplZone=nz; toast("Marges blanches du billet modèle retirées"); }catch(e){}
+}
 async function loadTemplate(){
   tplData=null; tplEl=null; tplZone=null; draftZone=null; $("#tplMsg").textContent=""; paintTpl();
   if(role!=="admin"||!currentId) return; const id=currentId;
   try{ const d=await rpc("get_event_template",{p_pin:pin,p_event:id}); if(id!==currentId||!d||!d.data) return; tplData=d.data; tplZone=d.zone||null; tplWidth=Number(d.width)||15; tplEl=await loadImg(tplData); }catch(e){}
+  if(tplEl) await retrim();
   paintTpl(); if(tplEl && !tplZone) autoZone();
 }
 $("#tplInput").addEventListener("change", async e=>{
   const f=e.target.files&&e.target.files[0]; e.target.value=""; if(!f||!currentId) return;
   toast("Envoi du billet modèle…");
-  try{ const d=await shrinkImage(f,2400,2400,0.92); await rpc("set_event_template",{p_pin:pin,p_event:currentId,p_data:d}); tplData=d; tplEl=await loadImg(d); tplZone=null; draftZone=null; paintTpl(); $("#tplMsg").textContent="Tracez maintenant un carré sur l'espace vide du billet, puis cliquez sur « Enregistrer l'emplacement »."; autoZone(); }
+  try{ let d=await shrinkImage(f,2400,2400,0.92); { const tr=trimWhite(await loadImg(d)); if(tr) d=tr.data; } await rpc("set_event_template",{p_pin:pin,p_event:currentId,p_data:d}); tplData=d; tplEl=await loadImg(d); tplZone=null; draftZone=null; paintTpl(); $("#tplMsg").textContent="Tracez maintenant un carré sur l'espace vide du billet, puis cliquez sur « Enregistrer l'emplacement »."; autoZone(); }
   catch(err){ toast(err && err.message ? errMsg(err) : "Image illisible. Essayez un fichier JPG ou PNG."); }
 });
 function relPos(e){ const b=$("#tplImg").getBoundingClientRect(); return {x:Math.min(1,Math.max(0,(e.clientX-b.left)/b.width)), y:Math.min(1,Math.max(0,(e.clientY-b.top)/b.height))}; }
