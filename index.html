@@ -827,14 +827,13 @@ function ticketCanvas(t, ev){
   return c;
 }
 function ticketCanvasImg(t, ev, img){
-  const W=1080, ih=Math.round(Math.min(img.height*W/img.width, 1350)), H=ih+880;
+  const W=1080, ih=Math.round(Math.min(img.height*W/img.width, 1350)), H=ih+700;
   const c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d"); g.textBaseline="middle";
   g.fillStyle="#FFFFFF"; g.fillRect(0,0,W,H);
   const sh=Math.min(img.height, ih*img.width/W); g.drawImage(img,0,(img.height-sh)/2,img.width,sh,0,0,W,ih);
   g.fillStyle="#EEF0EB"; for(let x=24;x<W;x+=48){ g.beginPath(); g.arc(x,ih,9,0,Math.PI*2); g.fill(); }
   g.fillStyle="#5B616C"; g.font="500 28px 'IBM Plex Sans', sans-serif"; g.textAlign="center";
-  g.fillText([ev?ev.name:"", fmtDate(ev&&ev.date)].filter(Boolean).join("  ·  ").slice(0,70), W/2, ih+60);
-  const size=720, ox=(W-size)/2, oy=ih+110; g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12),ox,oy,size,size);
+  const size=600, ox=(W-size)/2, oy=ih+40; g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12,1),ox,oy,size,size);
   return c;
 }
 function downloadTicket(t){ if(!formatOk()) return; ticketCanvas(t, current()).toBlob(b=>saveBlob(b,"billet-"+slug(label(t))+"-"+t.code+".png"),"image/png"); }
@@ -873,11 +872,11 @@ function downloadPdfImg(list, ev){
     const k=i%n; if(i>0&&k===0) doc.addPage();
     const x=mx+(k%cols)*cw, y=my+Math.floor(k/cols)*ch;
     if(n>1){ doc.setLineDashPattern([1,1.5],0); doc.setDrawColor(190); doc.rect(x,y,cw,ch); }
-    const qs=Math.min(cw*0.85, ch*0.66), block=qs;
+    const qs=Math.min(cw*0.68, ch*0.52), block=qs;
     let iw=cw-8*s, ih=iw*r; const maxH=ch-block-14*s; if(ih>maxH){ ih=maxH; iw=ih/r; }
     doc.addImage(evImg,"JPEG",x+(cw-iw)/2,y+4*s,iw,ih);
-    const top=y+4*s+ih, qy=top+0.5*s;
-    doc.addImage(qrCanvas(t.code,12).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
+    const top=y+4*s+ih, qy=top+2*s;
+    doc.addImage(qrCanvas(t.code,12,1).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
   });
   doc.save("billets-"+slug(ev?ev.name:"evenement")+".pdf");
 }
