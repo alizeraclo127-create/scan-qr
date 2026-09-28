@@ -653,17 +653,14 @@ function ticketCanvas(t, ev){
   return c;
 }
 function ticketCanvasImg(t, ev, img){
-  const W=1080, ih=Math.round(Math.min(img.height*W/img.width, 1350)), H=ih+860;
+  const W=1080, ih=Math.round(Math.min(img.height*W/img.width, 1350)), H=ih+880;
   const c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d"); g.textBaseline="middle";
   g.fillStyle="#FFFFFF"; g.fillRect(0,0,W,H);
   const sh=Math.min(img.height, ih*img.width/W); g.drawImage(img,0,(img.height-sh)/2,img.width,sh,0,0,W,ih);
   g.fillStyle="#EEF0EB"; for(let x=24;x<W;x+=48){ g.beginPath(); g.arc(x,ih,9,0,Math.PI*2); g.fill(); }
   g.fillStyle="#5B616C"; g.font="500 28px 'IBM Plex Sans', sans-serif"; g.textAlign="center";
   g.fillText([ev?ev.name:"", fmtDate(ev&&ev.date)].filter(Boolean).join("  ·  ").slice(0,70), W/2, ih+60);
-  const size=520, ox=(W-size)/2, oy=ih+100; g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12),ox,oy,size,size);
-  g.fillStyle="#15171C"; fitText(g, label(t), W/2, oy+size+60, W-120, 48, "800", "'Bricolage Grotesque', sans-serif", "center");
-  g.fillStyle="#3B35DB"; g.font="600 38px 'IBM Plex Mono', monospace"; g.textAlign="center"; g.fillText(t.code, W/2, oy+size+125);
-  g.fillStyle="#5B616C"; g.font="500 26px 'IBM Plex Sans', sans-serif"; g.fillText((t.cat||"Standard").toUpperCase()+"  ·  valable pour une seule entrée", W/2, oy+size+180);
+  const size=720, ox=(W-size)/2, oy=ih+110; g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12),ox,oy,size,size);
   return c;
 }
 function downloadTicket(t){ ticketCanvas(t, current()).toBlob(b=>saveBlob(b,"billet-"+slug(label(t))+"-"+t.code+".png"),"image/png"); }
@@ -700,16 +697,11 @@ function downloadPdfImg(list, ev){
     const k=i%n; if(i>0&&k===0) doc.addPage();
     const x=mx+(k%cols)*cw, y=my+Math.floor(k/cols)*ch;
     if(n>1){ doc.setLineDashPattern([1,1.5],0); doc.setDrawColor(190); doc.rect(x,y,cw,ch); }
-    const qs=Math.min(cw*0.55, ch*0.42), textH=22*s, block=qs+textH;
+    const qs=Math.min(cw*0.66, ch*0.52), block=qs;
     let iw=cw-8*s, ih=iw*r; const maxH=ch-block-14*s; if(ih>maxH){ ih=maxH; iw=ih/r; }
     doc.addImage(evImg,"JPEG",x+(cw-iw)/2,y+4*s,iw,ih);
     const top=y+4*s+ih, qy=top+Math.max(4*s,(y+ch-top-block)/2);
-    doc.addImage(qrCanvas(t.code,10).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
-    doc.setTextColor(21,23,28); doc.setFont("helvetica","bold"); doc.setFontSize(12*s);
-    doc.text(doc.splitTextToSize(label(t),cw-10)[0], x+cw/2, qy+qs+7*s, {align:"center"});
-    doc.setFont("courier","bold"); doc.setFontSize(12*s); doc.setTextColor(59,53,219); doc.text(t.code, x+cw/2, qy+qs+13.5*s, {align:"center"});
-    doc.setFont("helvetica","normal"); doc.setFontSize(7.5*s); doc.setTextColor(91,97,108);
-    doc.text((t.cat||"Standard").toUpperCase()+" - une seule entrée", x+cw/2, qy+qs+19*s, {align:"center"});
+    doc.addImage(qrCanvas(t.code,12).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
   });
   doc.save("billets-"+slug(ev?ev.name:"evenement")+".pdf");
 }
