@@ -249,7 +249,7 @@ details[open] summary::after{content:"–"}
     <div class="card panel" id="genBox">
       <div class="evhead"><span class="eyebrow">Pour l'événement</span><span class="evname" id="genEvName">—</span></div>
       <details class="card" id="visuBox" style="padding:14px">
-        <summary>Visuel en haut des billets <span class="muted" id="visuState" style="font-weight:400">(optionnel)</span></summary>
+        <summary>Billets électroniques <span class="muted" id="visuState" style="font-weight:400">(optionnel)</span></summary>
         <div class="panel" style="margin-top:12px">
           <div class="visu"><div id="visuPrev"><div class="ph">Aucun visuel</div></div>
             <div class="panel" style="gap:8px">
@@ -259,7 +259,6 @@ details[open] summary::after{content:"–"}
             </div>
           </div>
           <label class="check" for="withImg"><input type="checkbox" id="withImg" checked> Mettre le visuel sur les billets téléchargés (PNG et PDF)</label>
-          <label class="check" for="pdfPer">Billets par page A4 (PDF) <select id="pdfPer" style="width:auto;padding:8px 10px"><option value="1">1 — pleine page</option><option value="2">2 par page</option><option value="4">4 par page</option></select></label>
         </div>
       </details>
       <div class="seg" role="group" aria-label="Type">
@@ -308,7 +307,7 @@ details[open] summary::after{content:"–"}
       <button class="btn small" id="pdfBtn" type="button">Planche PDF à imprimer</button>
       <button class="btn small" id="exportBtn" type="button">Exporter en CSV</button>
       <button class="btn small" id="refreshBtn" type="button">Actualiser</button>
-      <span id="withImg2Wrap" style="flex:0 0 auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap" hidden><label class="check" for="withImg2"><input type="checkbox" id="withImg2" checked> Avec visuel</label><select id="pdfPer2" aria-label="Billets par page" style="width:auto;padding:8px 10px"><option value="1">1 par page</option><option value="2">2 par page</option><option value="4">4 par page</option></select></span>
+      <span id="withImg2Wrap" style="flex:0 0 auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap" hidden><label class="check" for="withImg2"><input type="checkbox" id="withImg2" checked> Avec visuel</label></span>
     </div>
     <div class="card list" id="list"></div>
     <div class="card panel">
@@ -688,7 +687,7 @@ function downloadPdf(list){
   });
   doc.save("qr-"+slug(ev?ev.name:"evenement")+".pdf");
 }
-function perPage(){ return parseInt($("#pdfPer").value,10)||1; }
+function perPage(){ return 1; }
 function downloadPdfImg(list, ev){
   const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"});
   const n=perPage(), cols=n===4?2:1, rows=n===1?1:2, mx=n===1?10:4, my=n===1?10:4;
@@ -705,9 +704,6 @@ function downloadPdfImg(list, ev){
   });
   doc.save("billets-"+slug(ev?ev.name:"evenement")+".pdf");
 }
-$("#pdfPer").addEventListener("change",()=>{ $("#pdfPer2").value=$("#pdfPer").value; ls.set("sq-per",$("#pdfPer").value); });
-$("#pdfPer2").addEventListener("change",()=>{ $("#pdfPer").value=$("#pdfPer2").value; ls.set("sq-per",$("#pdfPer2").value); });
-{ const v=ls.get("sq-per"); if(v){ $("#pdfPer").value=v; $("#pdfPer2").value=v; } }
 $("#pdfBtn").addEventListener("click",()=>downloadPdf(tickets));
 $("#exportBtn").addEventListener("click",()=>{
   const ev=current(); if(!ev) return;
