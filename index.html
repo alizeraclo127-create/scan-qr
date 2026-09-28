@@ -267,7 +267,7 @@ details[open] summary::after{content:"–"}
           <div class="row"><label class="btn small" for="tplInput" style="flex:0 0 auto;flex-direction:row;color:var(--ink);font-size:13px">Importer le billet modèle</label><button class="btn small danger" id="tplDel" type="button" style="flex:0 0 auto" hidden>Retirer le modèle</button></div>
           <input id="tplInput" class="sr" type="file" accept="image/*">
           <div id="tplWrap" hidden style="position:relative;touch-action:none;user-select:none;-webkit-user-select:none;cursor:crosshair"><img id="tplImg" alt="Billet modèle" draggable="false" style="display:block;width:100%;height:auto;border-radius:8px;border:1px solid var(--line)"><div id="tplRect" style="position:absolute;border:3px solid var(--accent);background:rgba(59,53,219,.18);display:none;pointer-events:none"></div></div>
-          <div class="row" id="tplSizeRow" hidden><input id="tplWidth" type="hidden" value="15"><span class="muted" style="flex:1 1 200px;align-self:center">Impression : 8 billets par page A4 (4 à gauche, 4 à droite). Le QR remplit le carré bleu.</span><button class="btn primary" id="tplSave" type="button" style="flex:0 1 auto">Enregistrer l'emplacement</button></div>
+          <div class="row" id="tplSizeRow" hidden><input id="tplWidth" type="hidden" value="15"><span class="muted" style="flex:1 1 200px;align-self:center">Impression : A4 paysage, 3 billets par ligne, collés sans espace, avec traits de coupe. Le QR remplit le carré bleu.</span><button class="btn primary" id="tplSave" type="button" style="flex:0 1 auto">Enregistrer l'emplacement</button></div>
           <p class="muted" id="tplMsg" style="margin:0"></p>
         </div>
       </details>
@@ -567,7 +567,7 @@ function showCreated(made){
     $("#dlLast").onclick=()=>downloadTicket(t);
   } else {
     box.innerHTML = `<div class="panel"><div class="t-name">${made.length} QR codes créés</div>
-      <span class="muted">N° ${pad(made[0].num)} à ${pad(made[made.length-1].num)} · ${usePaper()?"8 billets":(useImg()?"1 billet":"12 QR")} par page A4, à imprimer puis découper.</span>
+      <span class="muted">N° ${pad(made[0].num)} à ${pad(made[made.length-1].num)} · ${usePaper()?"3 billets par ligne,":(useImg()?"1 billet":"12 QR")} par page A4, à imprimer puis découper.</span>
       <div><button class="btn primary small" id="pdfLast" type="button">Télécharger la planche PDF</button></div></div>`;
   }
   $("#pdfLast").onclick=()=>downloadPdf(made);
@@ -702,18 +702,22 @@ function ticketCanvasPaper(t){
   return c;
 }
 function downloadPdfPaper(list, ev){
-  const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4"});
-  const r=(tplEl.naturalHeight||tplEl.height)/(tplEl.naturalWidth||tplEl.width), gap=4, cols=2, rows=4, per=8;
-  let tw=(200-gap)/cols, th=tw*r; const maxTh=(287-gap*(rows-1))/rows; if(th>maxTh){ th=maxTh; tw=th/r; }
-  const ox=(210-(cols*tw+gap))/2, oy=(297-(rows*th+gap*(rows-1)))/2, z=tplZone;
+  const doc=new window.jspdf.jsPDF({unit:"mm",format:"a4",orientation:"landscape"});
+  const PW=297, PH=210, m=3, cols=3, r=(tplEl.naturalHeight||tplEl.height)/(tplEl.naturalWidth||tplEl.width);
+  let tw=(PW-2*m)/cols, th=tw*r; if(th>PH-2*m){ th=PH-2*m; tw=th/r; }
+  const rows=Math.max(1,Math.floor((PH-2*m)/th)), per=cols*rows;
+  const ox=(PW-cols*tw)/2, oy=(PH-rows*th)/2, z=tplZone;
+  const lines=()=>{ doc.setLineDashPattern([1.5,1.5],0); doc.setDrawColor(120); doc.setLineWidth(0.2);
+    for(let c=0;c<=cols;c++) doc.line(ox+c*tw, oy, ox+c*tw, oy+rows*th);
+    for(let rr=0;rr<=rows;rr++) doc.line(ox, oy+rr*th, ox+cols*tw, oy+rr*th); };
   [...list].sort((a,b)=>a.num-b.num).forEach((t,i)=>{
-    const k=i%per; if(i>0&&k===0) doc.addPage();
-    const col=Math.floor(k/rows), row=k%rows, x=ox+col*(tw+gap), y=oy+row*(th+gap);
+    const k=i%per; if(i>0&&k===0){ lines(); doc.addPage("a4","landscape"); }
+    const x=ox+(k%cols)*tw, y=oy+Math.floor(k/cols)*th;
     doc.addImage(tplData,"JPEG",x,y,tw,th,"tpl","FAST");
     const zw=z.w*tw, zh=z.h*th, s=Math.min(zw,zh);
     doc.addImage(qrCanvas(t.code,10,1).toDataURL("image/png"),"PNG",x+z.x*tw+(zw-s)/2,y+z.y*th+(zh-s)/2,s,s);
-    doc.setLineDashPattern([1,1.5],0); doc.setDrawColor(170); doc.rect(x,y,tw,th);
   });
+  lines();
   doc.save("billets-papier-"+slug(ev?ev.name:"evenement")+".pdf");
 }
 
