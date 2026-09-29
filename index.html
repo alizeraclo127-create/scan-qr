@@ -802,10 +802,14 @@ function formatOk(){
   if(fmt()==="elec" && !useImg() && tplZone && tplEl){ setFmt("papier"); toast("Format « Billets papier » sélectionné."); }
   return true;
 }
+function paperFit(zw,zh){ const k=0.11*1.45; const s=Math.min(zw, zh/(1+k)), ts=s*0.11; return {s, ts, qy:(zh-s*(1+k))/2}; }
 function ticketCanvasPaper(t){
   const W=tplEl.naturalWidth||tplEl.width, H=tplEl.naturalHeight||tplEl.height, c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
   g.drawImage(tplEl,0,0,W,H); const z=tplZone, zw=z.w*W, zh=z.h*H, s=Math.min(zw,zh);
-  g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12,1), z.x*W+(zw-s)/2, z.y*H+(zh-s)/2, s, s);
+  const p=paperFit(zw,zh), qx=z.x*W+(zw-p.s)/2, qy=z.y*H+p.qy;
+  g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12,1), qx, qy, p.s, p.s);
+  g.fillStyle="#15171C"; g.textAlign="center"; g.textBaseline="alphabetic"; g.font="700 "+Math.round(p.ts/0.72)+"px 'IBM Plex Sans', Arial, sans-serif";
+  g.fillText("N° "+pad(t.num||0), qx+p.s/2, qy+p.s+p.ts*1.25);
   return c;
 }
 function downloadPdfPaper(list, ev){
@@ -821,8 +825,10 @@ function downloadPdfPaper(list, ev){
     const k=i%per; if(i>0&&k===0){ lines(); doc.addPage("a4","landscape"); }
     const x=ox+(k%cols)*tw, y=oy+Math.floor(k/cols)*th;
     doc.addImage(tplData,"JPEG",x,y,tw,th,"tpl","FAST");
-    const zw=z.w*tw, zh=z.h*th, s=Math.min(zw,zh);
-    doc.addImage(qrCanvas(t.code,10,1).toDataURL("image/png"),"PNG",x+z.x*tw+(zw-s)/2,y+z.y*th+(zh-s)/2,s,s);
+    const zw=z.w*tw, zh=z.h*th, p=paperFit(zw,zh), qx=x+z.x*tw+(zw-p.s)/2, qy=y+z.y*th+p.qy;
+    doc.addImage(qrCanvas(t.code,10,1).toDataURL("image/png"),"PNG",qx,qy,p.s,p.s);
+    doc.setFont("helvetica","bold"); doc.setFontSize(p.ts*2.835/0.72); doc.setTextColor(21,23,28);
+    doc.text("N° "+pad(t.num||0), qx+p.s/2, qy+p.s+p.ts*1.25, {align:"center"});
   });
   lines();
   doc.save("billets-papier-"+slug(ev?ev.name:"evenement")+".pdf");
@@ -869,6 +875,7 @@ function ticketCanvasImg(t, ev, img){
   g.fillStyle="#EEF0EB"; for(let x=24;x<W;x+=48){ g.beginPath(); g.arc(x,ih,9,0,Math.PI*2); g.fill(); }
   g.fillStyle="#5B616C"; g.font="500 28px 'IBM Plex Sans', sans-serif"; g.textAlign="center";
   const size=460, ox=(W-size)/2, oy=ih+16; g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12,1),ox,oy,size,size);
+  g.fillText("N° "+pad(t.num||0), W/2, oy+size+30);
   return c;
 }
 function downloadTicket(t){ if(!formatOk()) return; ticketCanvas(t, current()).toBlob(b=>saveBlob(b,"billet-"+slug(label(t))+"-"+t.code+".png"),"image/png"); }
@@ -912,6 +919,8 @@ function downloadPdfImg(list, ev){
     doc.addImage(evImg,"JPEG",x+(cw-iw)/2,y+4*s,iw,ih);
     const top=y+4*s+ih, qy=top+0.5*s;
     doc.addImage(qrCanvas(t.code,12,1).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
+    doc.setFont("helvetica","normal"); doc.setFontSize(11); doc.setTextColor(91,97,108);
+    doc.text("N° "+pad(t.num||0), x+cw/2, qy+qs+5, {align:"center"});
   });
   doc.save("billets-"+slug(ev?ev.name:"evenement")+".pdf");
 }
