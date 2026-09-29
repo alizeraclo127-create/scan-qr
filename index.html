@@ -647,7 +647,7 @@ function showCreated(made){
   box.hidden=false;
   if(made.length===1){
     const t=made[0];
-    box.innerHTML = `<div class="ticket"><img alt="QR code ${esc(t.code)}" src="${qrCanvas(t.code,6).toDataURL("image/png")}">
+    box.innerHTML = `<div class="ticket"><img alt="QR code ${esc(t.code)}" src="${qrCanvas(t.code,6,4,t.num).toDataURL("image/png")}">
       <div class="panel" style="gap:8px"><span class="muted">Créé pour ${esc(current()?.name||"")}</span><div class="t-name">${esc(label(t))}</div><div class="t-code">${esc(t.code)}</div>
       <div class="row"><button class="btn primary small" id="dlLast" type="button">Télécharger le billet</button><button class="btn small" id="pdfLast" type="button">PDF</button></div></div></div>`;
     $("#dlLast").onclick=()=>downloadTicket(t);
@@ -802,14 +802,10 @@ function formatOk(){
   if(fmt()==="elec" && !useImg() && tplZone && tplEl){ setFmt("papier"); toast("Format « Billets papier » sélectionné."); }
   return true;
 }
-function paperFit(zw,zh){ const k=0.11*1.45; const s=Math.min(zw, zh/(1+k)), ts=s*0.11; return {s, ts, qy:(zh-s*(1+k))/2}; }
 function ticketCanvasPaper(t){
   const W=tplEl.naturalWidth||tplEl.width, H=tplEl.naturalHeight||tplEl.height, c=document.createElement("canvas"); c.width=W; c.height=H; const g=c.getContext("2d");
   g.drawImage(tplEl,0,0,W,H); const z=tplZone, zw=z.w*W, zh=z.h*H, s=Math.min(zw,zh);
-  const p=paperFit(zw,zh), qx=z.x*W+(zw-p.s)/2, qy=z.y*H+p.qy;
-  g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12,1), qx, qy, p.s, p.s);
-  g.fillStyle="#15171C"; g.textAlign="center"; g.textBaseline="alphabetic"; g.font="700 "+Math.round(p.ts/0.72)+"px 'IBM Plex Sans', Arial, sans-serif";
-  g.fillText("N° "+pad(t.num||0), qx+p.s/2, qy+p.s+p.ts*1.25);
+  g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12,1,t.num), z.x*W+(zw-s)/2, z.y*H+(zh-s)/2, s, s);
   return c;
 }
 function downloadPdfPaper(list, ev){
@@ -825,22 +821,29 @@ function downloadPdfPaper(list, ev){
     const k=i%per; if(i>0&&k===0){ lines(); doc.addPage("a4","landscape"); }
     const x=ox+(k%cols)*tw, y=oy+Math.floor(k/cols)*th;
     doc.addImage(tplData,"JPEG",x,y,tw,th,"tpl","FAST");
-    const zw=z.w*tw, zh=z.h*th, p=paperFit(zw,zh), qx=x+z.x*tw+(zw-p.s)/2, qy=y+z.y*th+p.qy;
-    doc.addImage(qrCanvas(t.code,10,1).toDataURL("image/png"),"PNG",qx,qy,p.s,p.s);
-    doc.setFont("helvetica","bold"); doc.setFontSize(p.ts*2.835/0.72); doc.setTextColor(21,23,28);
-    doc.text("N° "+pad(t.num||0), qx+p.s/2, qy+p.s+p.ts*1.25, {align:"center"});
+    const zw=z.w*tw, zh=z.h*th, s=Math.min(zw,zh);
+    doc.addImage(qrCanvas(t.code,10,1,t.num).toDataURL("image/png"),"PNG",x+z.x*tw+(zw-s)/2,y+z.y*th+(zh-s)/2,s,s);
   });
   lines();
   doc.save("billets-papier-"+slug(ev?ev.name:"evenement")+".pdf");
 }
 
 /* ---------- QR drawing / export ---------- */
-function qrCanvas(code, cell, m=4){
-  const qr = qrcode(0,"M"); qr.addData(code); qr.make();
+function qrCanvas(code, cell, m=4, num){
+  const lab = num==null ? null : pad(num);
+  const qr = qrcode(lab ? 3 : 0, lab ? "H" : "M"); qr.addData(code); qr.make();
   const n = qr.getModuleCount(), q=cell*(n+2*m);
   const c=document.createElement("canvas"); c.width=c.height=q; const g=c.getContext("2d");
   g.fillStyle="#fff"; g.fillRect(0,0,q,q); g.fillStyle="#000";
   for(let r=0;r<n;r++) for(let col=0;col<n;col++) if(qr.isDark(r,col)) g.fillRect((col+m)*cell,(r+m)*cell,cell,cell);
+  if(lab){
+    const bw=Math.max(9, lab.length*2.3+2.4)*cell, bh=5*cell, cx=(m+n/2)*cell, cy=(m+n/2)*cell;
+    g.fillStyle="#fff"; g.fillRect(cx-bw/2, cy-bh/2, bw, bh);
+    g.fillStyle="#000"; g.textAlign="center"; g.textBaseline="middle";
+    let fs=Math.round(bh*0.78); g.font="800 "+fs+"px Arial, 'Helvetica Neue', sans-serif";
+    while(g.measureText(lab).width>bw-cell*1.2 && fs>6){ fs--; g.font="800 "+fs+"px Arial, 'Helvetica Neue', sans-serif"; }
+    g.fillText(lab, cx, cy+fs*0.04);
+  }
   return c;
 }
 function fitText(g, text, x, y, maxW, size, weight, fam, align){
@@ -859,7 +862,7 @@ function ticketCanvas(t, ev){
   g.fillStyle="#B9B7FF"; g.font="500 22px 'IBM Plex Mono', monospace"; g.textAlign="left";
   g.fillText((evMeta(ev) || "Entrée unique").slice(0,52), 48, 126);
   g.fillStyle="#EEF0EB"; for(let x=18;x<W;x+=36){ g.beginPath(); g.arc(x,170,7,0,Math.PI*2); g.fill(); }
-  const qc=qrCanvas(t.code,12), size=500, ox=(W-size)/2, oy=210;
+  const qc=qrCanvas(t.code,12,4,t.num), size=500, ox=(W-size)/2, oy=210;
   g.imageSmoothingEnabled=false; g.drawImage(qc,ox,oy,size,size);
   g.fillStyle="#15171C"; fitText(g, label(t), W/2, oy+size+60, W-96, 42, "800", "'Bricolage Grotesque', sans-serif", "center");
   g.fillStyle="#3B35DB"; g.font="600 34px 'IBM Plex Mono', monospace"; g.textAlign="center"; g.fillText(t.code, W/2, oy+size+122);
@@ -874,8 +877,7 @@ function ticketCanvasImg(t, ev, img){
   const sh=Math.min(img.height, ih*img.width/W); g.drawImage(img,0,(img.height-sh)/2,img.width,sh,0,0,W,ih);
   g.fillStyle="#EEF0EB"; for(let x=24;x<W;x+=48){ g.beginPath(); g.arc(x,ih,9,0,Math.PI*2); g.fill(); }
   g.fillStyle="#5B616C"; g.font="500 28px 'IBM Plex Sans', sans-serif"; g.textAlign="center";
-  const size=460, ox=(W-size)/2, oy=ih+16; g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12,1),ox,oy,size,size);
-  g.fillText("N° "+pad(t.num||0), W/2, oy+size+30);
+  const size=460, ox=(W-size)/2, oy=ih+16; g.imageSmoothingEnabled=false; g.drawImage(qrCanvas(t.code,12,1,t.num),ox,oy,size,size);
   return c;
 }
 function downloadTicket(t){ if(!formatOk()) return; ticketCanvas(t, current()).toBlob(b=>saveBlob(b,"billet-"+slug(label(t))+"-"+t.code+".png"),"image/png"); }
@@ -895,7 +897,7 @@ function downloadPdf(list){
     doc.text(doc.splitTextToSize(ev?ev.name:"",cw-8)[0]||"", x+cw/2, y+6, {align:"center"});
     doc.setFont("helvetica","normal"); doc.setFontSize(7); doc.setTextColor(91,97,108);
     const m=evMeta(ev); if(m) doc.text(doc.splitTextToSize(m,cw-8)[0], x+cw/2, y+10, {align:"center"});
-    const qs=44; doc.addImage(qrCanvas(t.code,8).toDataURL("image/png"),"PNG",x+(cw-qs)/2,y+12,qs,qs);
+    const qs=44; doc.addImage(qrCanvas(t.code,8,4,t.num).toDataURL("image/png"),"PNG",x+(cw-qs)/2,y+12,qs,qs);
     doc.setTextColor(21,23,28); doc.setFont("helvetica","bold"); doc.setFontSize(10);
     doc.text(doc.splitTextToSize(label(t),cw-8)[0], x+cw/2, y+ch-11, {align:"center"});
     doc.setFont("courier","bold"); doc.setFontSize(10); doc.setTextColor(59,53,219);
@@ -918,9 +920,7 @@ function downloadPdfImg(list, ev){
     let iw=cw-8*s, ih=iw*r; const maxH=ch-block-14*s; if(ih>maxH){ ih=maxH; iw=ih/r; }
     doc.addImage(evImg,"JPEG",x+(cw-iw)/2,y+4*s,iw,ih);
     const top=y+4*s+ih, qy=top+0.5*s;
-    doc.addImage(qrCanvas(t.code,12,1).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
-    doc.setFont("helvetica","normal"); doc.setFontSize(11); doc.setTextColor(91,97,108);
-    doc.text("N° "+pad(t.num||0), x+cw/2, qy+qs+5, {align:"center"});
+    doc.addImage(qrCanvas(t.code,12,1,t.num).toDataURL("image/png"),"PNG",x+(cw-qs)/2,qy,qs,qs);
   });
   doc.save("billets-"+slug(ev?ev.name:"evenement")+".pdf");
 }
