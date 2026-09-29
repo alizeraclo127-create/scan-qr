@@ -830,7 +830,7 @@ function downloadPdfPaper(list, ev){
 
 /* ---------- QR drawing / export ---------- */
 function qrCanvas(code, cell, m=4, num){
-  const lab = num==null ? null : pad(num);
+  const lab = num==null ? null : String(num);
   const qr = qrcode(lab ? 3 : 0, lab ? "H" : "M"); qr.addData(code); qr.make();
   const n = qr.getModuleCount(), q=cell*(n+2*m);
   const c=document.createElement("canvas"); c.width=c.height=q; const g=c.getContext("2d");
