@@ -391,11 +391,11 @@ let ecodes = {}; try{ ecodes = JSON.parse(ls.get("sq-ecodes")||"{}")||{}; }catch
 function ecodeFor(id){ return (id && ecodes[id]) || null; }
 function setEcode(id, c){ if(!id) return; if(c) ecodes[id]=c; else delete ecodes[id]; ls.set("sq-ecodes", JSON.stringify(ecodes)); }
 let locked = false, curTab = "scan";
-async function rpc(fn, args){
+async function rpc(fn, args, qs){
   const headers = {"apikey":CFG.key, "Content-Type":"application/json"};
   if(String(CFG.key).startsWith("eyJ")) headers.Authorization = "Bearer "+CFG.key;
   if(EVF.has(fn) && args && !("p_ecode" in args)) args = {...args, p_ecode: ecodeFor(currentId)};
-  const r = await fetch(CFG.url.replace(/\/+$/,"")+"/rest/v1/rpc/"+fn, {method:"POST", headers, body:JSON.stringify(args||{})});
+  const r = await fetch(CFG.url.replace(/\/+$/,"")+"/rest/v1/rpc/"+fn+(qs?"?"+qs:""), {method:"POST", headers, body:JSON.stringify(args||{})});
   const txt = await r.text(); let data=null; try{ data = txt ? JSON.parse(txt) : null; }catch(e){}
   if(!r.ok){ const m = (data && (data.message||data.hint)) || txt || r.statusText; const err = new Error(m); err.status=r.status; throw err; }
   return data;
@@ -550,7 +550,7 @@ $("#codesForm").addEventListener("submit", async e=>{
 async function loadTickets(){
   if(!currentId){ tickets=[]; render(); return; }
   if(role==="admin"){
-    try{ tickets = await rpc("list_tickets",{p_pin:pin,p_event:currentId}) || []; }catch(e){ toast(errMsg(e)); }
+    try{ const all=[]; for(let off=0; off<500000; ){ const pg = await rpc("list_tickets",{p_pin:pin,p_event:currentId},"order=num.asc,code.asc&limit=1000&offset="+off) || []; if(!pg.length) break; all.push(...pg); off+=pg.length; } tickets=all; }catch(e){ toast(errMsg(e)); }
     render();
   } else refreshStats();
 }
